@@ -311,6 +311,46 @@ def select_route(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
     return ordered[-1]
 
 
+def _anchored(entry: Any, key: str) -> Any:
+    """Parse a per-run timestamp, anchoring bare times to the run's date.
+
+    The backend mixes formats: ``startTime`` is a full ISO datetime, while
+    ``checkInTime``/``checkOutTime``/``missedTime`` are time-of-day only
+    (e.g. "05:50:46+0000"). Surfacing those raw shows a UTC clock time that
+    looks two hours wrong to the reader.
+    """
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get(key)
+    if not raw:
+        return None
+    start = parse_dt(entry.get("startTime"))
+    parsed = parse_dt(raw, start.date() if start else None)
+    if parsed is None or start is None:
+        return parsed
+    # A run that crosses midnight would otherwise land before its departure.
+    if parsed < start:
+        import datetime as _d
+
+        parsed += _d.timedelta(days=1)
+    return parsed
+
+
+def route_checkin(entry: Any) -> Any:
+    """When the child boarded, as an aware datetime."""
+    return _anchored(entry, "checkInTime")
+
+
+def route_checkout(entry: Any) -> Any:
+    """When the child got off, as an aware datetime."""
+    return _anchored(entry, "checkOutTime")
+
+
+def route_missed(entry: Any) -> Any:
+    """When the school recorded a missed pickup, as an aware datetime."""
+    return _anchored(entry, "missedTime")
+
+
 def route_departure(entry: Any) -> Any:
     """Scheduled departure from the boarding station, as an aware datetime."""
     if not isinstance(entry, dict):

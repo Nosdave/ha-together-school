@@ -39,11 +39,15 @@ route_arrival = _util.route_arrival
 route_departure = _util.route_departure
 route_state = _util.route_state
 bus_fix = _util.bus_fix
+route_checkin = _util.route_checkin
+route_checkout = _util.route_checkout
 select_route = _util.select_route
 pick_id = _util.pick_id
 pupil_display_name = _util.pupil_display_name
 route_state = _util.route_state
 bus_fix = _util.bus_fix
+route_checkin = _util.route_checkin
+route_checkout = _util.route_checkout
 parse_tenant_id = _util.parse_tenant_id
 unwrap_envelope = _util.unwrap_envelope
 
@@ -237,6 +241,56 @@ class TestLiveDeliveryShape(unittest.TestCase):
             route_state({"studentState": "IS_NOT_ON_BOARD", "online": True}),
             "on_route",
         )
+
+
+# Exactly as returned once the child has boarded (ids/names replaced).
+ROUTE_BOARDED = {
+    "studentState": "IS_ON_BOARD",
+    "routeState": "ON_TIME",
+    "direction": "WAY_TO",
+    "schedule": "05:40:00+0000",
+    "arrivalTime": "06:05:00+0000",
+    # NB: bare time-of-day, unlike startTime.
+    "checkInTime": "05:50:46+0000",
+    "checkOutTime": None,
+    "missedTime": None,
+    "inOtherStop": True,
+    "startTime": "2026-09-21T05:40:00+0000",
+    "online": True,
+}
+
+
+class TestBoardedRun(unittest.TestCase):
+    def test_check_in_is_anchored_to_the_run_date(self):
+        """checkInTime is a bare UTC time; raw it reads two hours early."""
+        checked_in = route_checkin(ROUTE_BOARDED)
+        self.assertEqual(checked_in.date(), dt.date(2026, 9, 21))
+        self.assertEqual(checked_in.hour, 5)
+        self.assertIsNotNone(checked_in.tzinfo)
+        local = checked_in.astimezone(dt.timezone(dt.timedelta(hours=2)))
+        self.assertEqual((local.hour, local.minute), (7, 50))
+
+    def test_absent_check_out_is_none(self):
+        self.assertIsNone(route_checkout(ROUTE_BOARDED))
+
+    def test_boarded_run_is_on_board(self):
+        self.assertEqual(route_state(ROUTE_BOARDED), "on_board")
+
+    def test_check_in_after_midnight_rolls_to_the_next_day(self):
+        entry = {"startTime": "2026-09-21T23:50:00+0000",
+                 "checkInTime": "00:05:00+0000"}
+        self.assertEqual(route_checkin(entry).day, 22)
+
+    def test_location_type_changes_to_embarked_and_still_parses(self):
+        """The GeoJSON "type" flips to Embarked once on board."""
+        embarked = [{
+            "location": {
+                "type": "Embarked",
+                "geometry": {"type": "Point",
+                             "coordinates": [50.79956, 4.36468]},
+            }
+        }]
+        self.assertEqual(extract_latlon(embarked), (50.79956, 4.36468))
 
 
 class TestTenantDiscovery(unittest.TestCase):

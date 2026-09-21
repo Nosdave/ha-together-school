@@ -13,7 +13,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
-from .util import STATE_MISSED, is_on_bus, route_state
+from .util import (
+    STATE_MISSED,
+    is_on_bus,
+    route_checkin,
+    route_checkout,
+    route_missed,
+    route_state,
+)
 
 
 async def async_setup_entry(
@@ -48,8 +55,8 @@ class OnBusBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         route = self._route or {}
         return {
-            "check_in_time": route.get("checkInTime"),
-            "check_out_time": route.get("checkOutTime"),
+            "check_in_time": route_checkin(route),
+            "check_out_time": route_checkout(route),
         }
 
 
@@ -70,4 +77,4 @@ class MissedBusBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"missed_time": (self._route or {}).get("missedTime")}
+        return {"missed_time": route_missed(self._route or {})}

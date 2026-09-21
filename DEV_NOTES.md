@@ -171,3 +171,12 @@ Once a run is live the agenda entry fills in the fields that are `null` at rest:
 - `online: true`
 
 No separate delay field appears in this payload; `routeState` is the signal.
+
+Once the child boards:
+
+- `checkInTime` is filled - but as a **bare time-of-day** (`"05:50:46+0000"`),
+  unlike `startTime`, which is a full ISO datetime. Anchor it to the date of
+  `startTime`, or it shows as a UTC clock time two hours off local.
+- `studentState` flips to `IS_ON_BOARD` and `inOtherStop` may become `true`
+- the location object's `"type"` changes from `"Feature"` to `"Embarked"`;
+  only `geometry.coordinates` should be relied on, never `type`
