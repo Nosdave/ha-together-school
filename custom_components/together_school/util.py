@@ -115,10 +115,29 @@ def extract_latlon(node: Any) -> tuple[float, float] | None:
     if isinstance(geom, dict):
         coords = geom.get("coordinates")
         if isinstance(coords, (list, tuple)) and len(coords) >= 2:
-            # GeoJSON is [lng, lat].
-            if (pair := _as_latlon(coords[1], coords[0])) is not None:
+            if (pair := _coords_to_latlon(coords[0], coords[1])) is not None:
                 return pair
     return None
+
+
+def _coords_to_latlon(first: Any, second: Any) -> tuple[float, float] | None:
+    """Interpret a GeoJSON-style coordinate pair.
+
+    The backend wraps positions in ``"type": "Feature"`` objects but emits
+    ``[lat, lng]``, while GeoJSON specifies ``[lng, lat]``. Verified against a
+    known school address, whose coordinates come back as [50.79…, 4.37…] in
+    Brussels. Reading it the spec way would silently place the bus thousands of
+    kilometres away with both values still "valid", so this prefers the
+    observed order and only falls back to the spec when the first value cannot
+    possibly be a latitude.
+    """
+    try:
+        a, b = float(first), float(second)
+    except (TypeError, ValueError):
+        return None
+    if abs(a) > 90.0 >= abs(b):
+        return _as_latlon(b, a)  # unambiguously [lng, lat]
+    return _as_latlon(a, b)
 
 
 def _as_latlon(lat: Any, lon: Any) -> tuple[float, float] | None:
@@ -214,6 +233,10 @@ def bus_routes(agenda: Any) -> list[dict[str, Any]]:
     return []
 
 
+# Values the live API reports once a run is active.
+STUDENT_ON_BOARD = "IS_ON_BOARD"
+
+
 def route_state(entry: Any) -> str:
     """Classify one BUS_ROUTE entry into a single status."""
     if not isinstance(entry, dict):
@@ -224,9 +247,36 @@ def route_state(entry: Any) -> str:
         return STATE_COMPLETED
     if entry.get("checkInTime"):
         return STATE_ON_BOARD
+    # The live run also carries an explicit flag; trust it if the timestamps
+    # have not caught up yet.
+    if entry.get("studentState") == STUDENT_ON_BOARD:
+        return STATE_ON_BOARD
     if entry.get("online"):
         return STATE_ON_ROUTE
     return STATE_SCHEDULED
+
+
+def bus_fix(delivery: Any) -> dict[str, Any]:
+    """Metadata about the bus position fix, if the payload carries one.
+
+    ``busLocation`` is a LIST of per-bus entries, each wrapping a GeoJSON-ish
+    Feature plus ``lastLocatedTime`` and ``actual``.
+    """
+    if not isinstance(delivery, dict):
+        return {}
+    entries = delivery.get("busLocation")
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return {}
+    for item in entries:
+        if isinstance(item, dict):
+            return {
+                "bus_id": item.get("busId"),
+                "last_located": item.get("lastLocatedTime"),
+                "position_is_current": item.get("actual"),
+            }
+    return {}
 
 
 def is_on_bus(entry: Any) -> bool:

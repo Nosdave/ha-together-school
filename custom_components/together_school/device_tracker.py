@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity, extract_latlon
+from .util import bus_fix
 
 
 async def async_setup_entry(
@@ -60,11 +61,15 @@ class BusTracker(TogetherSchoolEntity, TrackerEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         delivery = self._pupil.get("delivery") or {}
-        bus = delivery.get("busLocation") or {}
-        attrs: dict[str, Any] = {}
-        if isinstance(bus, dict) and bus.get("busId"):
-            attrs["bus_id"] = bus["busId"]
+        # busLocation is a list of per-bus fixes; bus_fix() picks the first and
+        # carries the id plus how fresh the position is.
+        attrs: dict[str, Any] = {
+            k: v for k, v in bus_fix(delivery).items() if v is not None
+        }
         station = extract_latlon(delivery.get("stationLocation"))
         if station:
             attrs["station_lat"], attrs["station_lon"] = station
+        school = extract_latlon(delivery.get("schoolLocation"))
+        if school:
+            attrs["school_lat"], attrs["school_lon"] = school
         return attrs
