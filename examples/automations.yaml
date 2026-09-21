@@ -1,0 +1,98 @@
+# Together School - example automations
+#
+# The dashboard is for looking things up; these are for not having to look.
+# Paste into your automations, adjust entity ids and notify targets.
+
+# --------------------------------------------------------------------------
+# 1. Child boarded the bus in the morning
+# --------------------------------------------------------------------------
+- alias: "School bus: child checked in"
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.school_bus_alex_on_bus
+      from: "off"
+      to: "on"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        title: "School bus"
+        message: "Alex is on the bus."
+
+# --------------------------------------------------------------------------
+# 2. Child got off (arrived at school, or back at the stop)
+# --------------------------------------------------------------------------
+- alias: "School bus: child checked out"
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.school_bus_alex_on_bus
+      from: "on"
+      to: "off"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        title: "School bus"
+        message: "Alex has got off the bus."
+
+# --------------------------------------------------------------------------
+# 3. Bus is approaching home - time to head downstairs
+#
+# Requires a zone around your home (HA creates zone.home automatically). The
+# radius decides the warning time; ~600 m is roughly 2 minutes in city traffic.
+# Keep the coordinates in HA's zone config, never in a dashboard file.
+# --------------------------------------------------------------------------
+- alias: "School bus: approaching home"
+  triggers:
+    - trigger: zone
+      entity_id: device_tracker.school_bus_alex_bus
+      zone: zone.home
+      event: enter
+  conditions:
+    # Only in the afternoon run, when the child is being brought back.
+    - condition: time
+      after: "14:00:00"
+      before: "18:00:00"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        title: "School bus"
+        message: "The bus is nearly at the stop."
+
+# --------------------------------------------------------------------------
+# 4. The school itself flagged the child as having missed the bus
+# --------------------------------------------------------------------------
+- alias: "School bus: missed"
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.school_bus_alex_missed_the_bus
+      to: "on"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        title: "School bus"
+        message: "Alex was marked as having missed the bus."
+
+# --------------------------------------------------------------------------
+# 5. Leave-the-house reminder, 10 minutes before the scheduled pickup
+#
+# The departure sensor is a timestamp, so this follows the timetable even when
+# it changes - no hard-coded clock time.
+# --------------------------------------------------------------------------
+- alias: "School bus: time to head to the stop"
+  triggers:
+    - trigger: template
+      value_template: >-
+        {% set dep = states('sensor.school_bus_alex_scheduled_departure') %}
+        {{ dep not in ['unknown', 'unavailable']
+           and 0 < (as_timestamp(dep) - as_timestamp(now())) <= 600 }}
+  conditions:
+    - condition: state
+      entity_id: binary_sensor.school_bus_alex_on_bus
+      state: "off"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        title: "School bus"
+        message: >-
+          Pickup at
+          {{ as_timestamp(states('sensor.school_bus_alex_scheduled_departure'))
+             | timestamp_custom('%H:%M') }} - time to head down.
