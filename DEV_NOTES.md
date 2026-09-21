@@ -180,3 +180,20 @@ Once the child boards:
 - `studentState` flips to `IS_ON_BOARD` and `inOtherStop` may become `true`
 - the location object's `"type"` changes from `"Feature"` to `"Embarked"`;
   only `geometry.coordinates` should be relied on, never `type`
+
+When the run finishes:
+
+- `checkOutTime` is filled (again a bare time-of-day), `routeState` becomes
+  `COMPLETED`, `studentState` returns to `IS_NOT_ON_BOARD` and `online` goes
+  back to `false`
+- `busLocation` becomes `null` again - there is no last-known position to fall
+  back on, so the tracker is simply unavailable outside runs
+
+Full observed lifecycle of one run:
+
+| phase | online | busLocation | studentState | routeState | timestamps |
+| --- | --- | --- | --- | --- | --- |
+| at rest | false | null | null | null | none |
+| on route | true | list | IS_NOT_ON_BOARD | ON_TIME | - |
+| boarded | true | list | IS_ON_BOARD | ON_TIME | checkInTime |
+| finished | false | null | IS_NOT_ON_BOARD | COMPLETED | + checkOutTime |
