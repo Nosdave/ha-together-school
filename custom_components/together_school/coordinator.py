@@ -83,11 +83,16 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # HA's configured timezone, not the process one: a container running
         # in UTC would otherwise shift every window.
         now = dt_util.now()
-        if self._active_hours_only and not _in_active_window(
-            now, self._active_windows
+        # Always fetch once, even outside the windows: after a restart at noon
+        # we would otherwise show nothing until the next commute window, hiding
+        # today's timetable and the completed morning run.
+        if (
+            self._active_hours_only
+            and self.data
+            and not _in_active_window(now, self._active_windows)
         ):
             # Keep the last known data; skip the network round-trip.
-            return self.data or {"pupils": {}, "parent_id": self.parent_id}
+            return self.data
 
         result: dict[str, Any] = {"pupils": {}, "parent_id": self.parent_id}
         today = now.date().isoformat()
