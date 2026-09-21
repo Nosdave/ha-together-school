@@ -22,7 +22,10 @@ from .util import (
     STATE_ON_ROUTE,
     STATE_SCHEDULED,
     route_arrival,
+    route_checkin,
+    route_checkout,
     route_departure,
+    route_missed,
     route_state,
 )
 
@@ -79,9 +82,11 @@ class BusStatusSensor(TogetherSchoolEntity, SensorEntity):
             # ON_TIME / delayed etc. - the backend's own punctuality verdict.
             "route_state": route.get("routeState"),
             "student_state": route.get("studentState"),
-            "check_in_time": route.get("checkInTime"),
-            "check_out_time": route.get("checkOutTime"),
-            "missed_time": route.get("missedTime"),
+            # Anchored to the run's date: the raw values are bare UTC times
+            # and would read two hours off for a reader in Brussels.
+            "check_in_time": route_checkin(route),
+            "check_out_time": route_checkout(route),
+            "missed_time": route_missed(route),
             "online": route.get("online"),
         }
 
