@@ -76,6 +76,9 @@ class BusStatusSensor(TogetherSchoolEntity, SensorEntity):
             "direction": route.get("direction"),
             "boarding_station": route.get("boardingStation"),
             "arrival_station": route.get("arrivalStation"),
+            # ON_TIME / delayed etc. - the backend's own punctuality verdict.
+            "route_state": route.get("routeState"),
+            "student_state": route.get("studentState"),
             "check_in_time": route.get("checkInTime"),
             "check_out_time": route.get("checkOutTime"),
             "missed_time": route.get("missedTime"),

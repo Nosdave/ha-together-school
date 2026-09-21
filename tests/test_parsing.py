@@ -38,10 +38,12 @@ parse_dt = _util.parse_dt
 route_arrival = _util.route_arrival
 route_departure = _util.route_departure
 route_state = _util.route_state
+bus_fix = _util.bus_fix
 select_route = _util.select_route
 pick_id = _util.pick_id
 pupil_display_name = _util.pupil_display_name
 route_state = _util.route_state
+bus_fix = _util.bus_fix
 parse_tenant_id = _util.parse_tenant_id
 unwrap_envelope = _util.unwrap_envelope
 
@@ -155,6 +157,88 @@ class TestRobustness(unittest.TestCase):
         self.assertEqual(route_state(chosen), "scheduled")
 
 
+# Exactly as returned by a live run (ids and names replaced).
+DELIVERY_LIVE = {
+    "studentLocation": None,
+    "busLocation": [
+        {
+            "busId": "00000000-0000-0000-0000-000000000000",
+            "location": {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [50.79969, 4.34165]},
+                "properties": {"name": "Unknown place"},
+            },
+            "lastLocatedTime": "2026-09-21T05:35:44+0000",
+            "actual": True,
+        }
+    ],
+    "schoolLocation": [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [50.79967, 4.37518]},
+            "properties": {"name": "1180 BRUXELLES"},
+        }
+    ],
+    "stationLocation": [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [50.79475, 4.3525]},
+            "properties": {"name": "1180 BRUXELLES"},
+        }
+    ],
+}
+
+
+class TestLiveDeliveryShape(unittest.TestCase):
+    """The backend labels positions "Feature" but emits [lat, lng].
+
+    GeoJSON specifies [lng, lat]. Reading these the spec way keeps both values
+    in range, so the bus would appear thousands of km away and nothing would
+    look broken - hence an explicit test.
+    """
+
+    def test_bus_position_is_read_as_lat_lng(self):
+        lat, lon = extract_latlon(DELIVERY_LIVE["busLocation"])
+        self.assertAlmostEqual(lat, 50.79969)
+        self.assertAlmostEqual(lon, 4.34165)
+
+    def test_school_and_station_too(self):
+        self.assertAlmostEqual(
+            extract_latlon(DELIVERY_LIVE["schoolLocation"])[0], 50.79967
+        )
+        self.assertAlmostEqual(
+            extract_latlon(DELIVERY_LIVE["stationLocation"])[1], 4.3525
+        )
+
+    def test_spec_order_still_works_when_unambiguous(self):
+        """A real [lng, lat] source with |lng| > 90 must not be misread."""
+        self.assertEqual(
+            extract_latlon({"geometry": {"coordinates": [-122.4, 37.8]}}),
+            (37.8, -122.4),
+        )
+
+    def test_fix_metadata(self):
+        meta = bus_fix(DELIVERY_LIVE)
+        self.assertEqual(meta["last_located"], "2026-09-21T05:35:44+0000")
+        self.assertTrue(meta["position_is_current"])
+
+    def test_fix_metadata_on_idle_payload(self):
+        self.assertEqual(bus_fix(DELIVERY_IDLE), {})
+
+    def test_student_state_marks_on_board(self):
+        """The live run carries an explicit flag alongside the timestamps."""
+        self.assertEqual(
+            route_state({"studentState": "IS_ON_BOARD", "online": True}),
+            "on_board",
+        )
+
+    def test_student_state_not_on_board_is_on_route(self):
+        self.assertEqual(
+            route_state({"studentState": "IS_NOT_ON_BOARD", "online": True}),
+            "on_route",
+        )
+
+
 class TestTenantDiscovery(unittest.TestCase):
     """The tenant is per-school, so it must be read, never assumed."""
 
@@ -224,8 +308,13 @@ class TestLocations(unittest.TestCase):
         node = {"busId": "b1", "location": {"lat": 50.85, "lng": 4.34}}
         self.assertEqual(extract_latlon(node), (50.85, 4.34))
 
-    def test_geojson_coordinates_are_lng_lat(self):
-        node = {"geometry": {"coordinates": [4.34, 50.85]}}
+    def test_ambiguous_coordinates_use_the_backend_order(self):
+        """Despite the "Feature" wrapper the backend emits [lat, lng].
+
+        When both values could be a latitude the order is undecidable, so the
+        observed convention wins - verified against a known school address.
+        """
+        node = {"geometry": {"coordinates": [50.85, 4.34]}}
         self.assertEqual(extract_latlon(node), (50.85, 4.34))
 
 

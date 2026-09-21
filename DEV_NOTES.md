@@ -135,8 +135,39 @@ with `missed` (missedTime) taking precedence.
 Note: the pupil record's `"active": false` does **not** mean transport is
 inactive - runs are scheduled regardless.
 
-## STILL TO CONFIRM (needs a bus actually driving)
+## Live run payload (confirmed while a bus was actually driving)
 
-- populated shape of `busLocation` (lat/lng vs nested vs GeoJSON coordinates)
-- the values `studentState` / `routeState` take while a run is live
-- whether a delay is exposed anywhere in this payload
+`deliveryWithBus/location` during a run:
+
+```json
+{"studentLocation": null,
+ "busLocation": [{"busId": "<uuid>",
+                  "location": {"type": "Feature",
+                               "geometry": {"type": "Point",
+                                            "coordinates": [50.79969, 4.34165]},
+                               "properties": {"name": "Unknown place"}},
+                  "lastLocatedTime": "2026-09-21T05:35:44+0000",
+                  "actual": true}],
+ "schoolLocation":  [{"type": "Feature", "geometry": {...}, "properties": {...}}],
+ "stationLocation": [{"type": "Feature", "geometry": {...}, "properties": {...}}]}
+```
+
+**The coordinate order is `[lat, lng]`, not GeoJSON's `[lng, lat]`** - despite
+the `"type": "Feature"` wrapper. Verified against a known school address. Read
+the spec way, both values stay in range and the bus silently appears thousands
+of kilometres away, so this is worth a dedicated test. `util.extract_latlon`
+prefers the observed order and only falls back to the spec order when the first
+value cannot be a latitude (|x| > 90).
+
+Each of the three location keys is a **list**, not an object. `busLocation`
+entries also carry `lastLocatedTime` and `actual` (whether the fix is current).
+
+Once a run is live the agenda entry fills in the fields that are `null` at rest:
+
+- `busId`, `activeRouteId` - uuids of the running bus and route
+- `studentState` - `IS_NOT_ON_BOARD`, and `IS_ON_BOARD` after boarding
+- `routeState` - `ON_TIME` (the backend's own punctuality verdict; other
+  values not yet observed)
+- `online: true`
+
+No separate delay field appears in this payload; `routeState` is the signal.

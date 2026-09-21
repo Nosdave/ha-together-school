@@ -118,6 +118,7 @@ Tests need nothing but the standard library:
 python3 tests/test_parsing.py
 python3 tests/test_no_password_stored.py
 python3 tests/test_runtime_contract.py
+python3 tools/check_neutral.py   # no school-specific values committed
 ```
 
 ## Licence
