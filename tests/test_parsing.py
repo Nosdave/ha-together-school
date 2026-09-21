@@ -293,6 +293,65 @@ class TestBoardedRun(unittest.TestCase):
         self.assertEqual(extract_latlon(embarked), (50.79956, 4.36468))
 
 
+class TestTwoRunDay(unittest.TestCase):
+    """Some weekdays have a return leg, others do not.
+
+    Observed: the morning WAY_TO runs daily, while WAY_BACK only appears on
+    some weekdays, departing in the afternoon. Both legs live in the same
+    BUS_ROUTE list, so once the morning has completed the afternoon leg is the
+    one that matters.
+    """
+
+    MORNING_DONE = {
+        "direction": "WAY_TO",
+        "startTime": "2026-09-22T05:40:00+0000",
+        "arrivalTime": "06:05:00+0000",
+        "checkInTime": "05:50:46+0000",
+        "checkOutTime": "06:05:18+0000",
+        "routeState": "COMPLETED",
+        "online": False,
+    }
+    AFTERNOON = {
+        "direction": "WAY_BACK",
+        "startTime": "2026-09-22T14:00:00+0000",
+        "arrivalTime": "14:21:00+0000",
+        "checkInTime": None,
+        "checkOutTime": None,
+        "online": False,
+    }
+
+    def test_completed_morning_yields_to_the_afternoon_leg(self):
+        chosen = select_route([self.MORNING_DONE, self.AFTERNOON])
+        self.assertEqual(chosen["direction"], "WAY_BACK")
+        self.assertEqual(route_state(chosen), "scheduled")
+
+    def test_order_in_the_payload_does_not_matter(self):
+        chosen = select_route([self.AFTERNOON, self.MORNING_DONE])
+        self.assertEqual(chosen["direction"], "WAY_BACK")
+
+    def test_afternoon_times_are_local_afternoon(self):
+        """14:00Z is a 16:00 pickup at the school."""
+        dep = route_departure(self.AFTERNOON).astimezone(
+            dt.timezone(dt.timedelta(hours=2))
+        )
+        arr = route_arrival(self.AFTERNOON).astimezone(
+            dt.timezone(dt.timedelta(hours=2))
+        )
+        self.assertEqual((dep.hour, dep.minute), (16, 0))
+        self.assertEqual((arr.hour, arr.minute), (16, 21))
+
+    def test_running_afternoon_wins_over_completed_morning(self):
+        live = dict(self.AFTERNOON, online=True,
+                    studentState="IS_ON_BOARD",
+                    checkInTime="14:02:00+0000")
+        chosen = select_route([self.MORNING_DONE, live])
+        self.assertEqual(route_state(chosen), "on_board")
+
+    def test_day_without_a_return_leg(self):
+        chosen = select_route([self.MORNING_DONE])
+        self.assertEqual(route_state(chosen), "completed")
+
+
 class TestTenantDiscovery(unittest.TestCase):
     """The tenant is per-school, so it must be read, never assumed."""
 

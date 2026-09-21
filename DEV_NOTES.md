@@ -189,6 +189,12 @@ When the run finishes:
 - `busLocation` becomes `null` again - there is no last-known position to fall
   back on, so the tracker is simply unavailable outside runs
 
+Not every weekday has a return leg: the morning `WAY_TO` run appears daily,
+while `WAY_BACK` shows up only on some weekdays, departing in the afternoon.
+Both legs arrive in the same `BUS_ROUTE` list for that date, so once the
+morning has completed the afternoon leg is the one to display. Bus numbers
+differ per weekday and per leg.
+
 Full observed lifecycle of one run:
 
 | phase | online | busLocation | studentState | routeState | timestamps |
