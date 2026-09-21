@@ -111,5 +111,18 @@ class TestSchoolCodeNormalisation(unittest.TestCase):
             self.assertEqual(self.norm(value), "")
 
 
+class TestFirstRefreshAlwaysFetches(unittest.TestCase):
+    """Restarting outside a commute window must not hide today's run."""
+
+    def test_skip_is_guarded_by_existing_data(self):
+        src = (_PKG / "coordinator.py").read_text()
+        window_check = src[src.index("_active_hours_only\n"):]
+        self.assertIn(
+            "self.data", window_check.split("return self.data")[0],
+            "the window skip must require self.data, so the first refresh "
+            "always performs a fetch",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
