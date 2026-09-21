@@ -1,0 +1,88 @@
+# Together School - "Morning" view: school bus next to your public transport
+#
+# The useful pairing: one screen that answers both morning questions at once -
+# "when do I need to be at the stop with my child?" and "when does my own
+# connection leave?".
+#
+# The right-hand column is a placeholder for your own departures page: if you
+# have one under config/www/ (reachable at /local/...), uncomment the iframe
+# card below. Nothing is shared between the two halves beyond the screen - no
+# credentials, no cross-dependency - so either side can change independently.
+#
+# Adjust the entity ids (see examples/dashboard.yaml for the naming pattern).
+
+views:
+  - title: Morning
+    path: morning
+    icon: mdi:weather-sunset-up
+    type: sections
+    max_columns: 2
+    sections:
+      # ----------------------------------------------------------------
+      # Left: the child's school bus
+      # ----------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: School bus
+            heading_style: title
+            icon: mdi:bus-school
+
+          - type: markdown
+            content: >-
+              {% set s = states('sensor.school_bus_alex_bus_status') %}
+              {% set dep = states('sensor.school_bus_alex_scheduled_departure') %}
+              {% if s == 'on_board' %}
+              ### 🚌 On the bus
+              {% elif s == 'missed' %}
+              ### 🔴 Bus missed
+              {% elif s == 'completed' %}
+              ### ✅ Arrived
+              {% elif s == 'on_route' %}
+              ### 🟡 Bus on its way - not checked in yet
+              {% elif s == 'scheduled' %}
+              ### 🕒 Scheduled
+              {% else %}
+              ### ⚪ No run today
+              {% endif %}
+              {% if dep not in ['unknown', 'unavailable'] %}
+
+              **Pickup {{ as_timestamp(dep) | timestamp_custom('%H:%M') }}**
+              ({{ relative_time(states.sensor.school_bus_alex_scheduled_departure.state | as_datetime) }})
+              {% endif %}
+
+          - type: map
+            entities:
+              - entity: device_tracker.school_bus_alex_bus
+            hours_to_show: 1
+            dark_mode: true
+
+          - type: entities
+            entities:
+              - entity: sensor.school_bus_alex_bus_status
+                name: Status
+              - entity: sensor.school_bus_alex_scheduled_departure
+                name: Departure
+              - entity: binary_sensor.school_bus_alex_on_bus
+                name: On the bus
+
+      # ----------------------------------------------------------------
+      # Right: optional slot for your own departures page
+      # ----------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: Departures
+            heading_style: title
+            icon: mdi:tram
+
+          # Optional: if you already have your own departures page, drop it
+          # in config/www/ and uncomment this to get both halves on one
+          # screen. Left commented so the view works as pasted.
+          # - type: iframe
+          #   url: /local/<your-page>/index.html
+          #   aspect_ratio: 120%
+          - type: markdown
+            content: >-
+              Put your own departures page in `config/www/` and uncomment the
+              iframe card in this file to show it here.

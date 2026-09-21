@@ -1,0 +1,23 @@
+name: tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests (stdlib only)
+        run: |
+          python3 tests/test_parsing.py
+          python3 tests/test_no_password_stored.py
+          python3 tests/test_runtime_contract.py
+      - name: Validate JSON
+        run: |
+          for f in $(find . -name '*.json' -not -path './.git/*'); do
+            python3 -c "import json,sys; json.load(open('$f'))" || exit 1
+          done
+      - name: Byte-compile
+        run: python3 -m compileall -q custom_components tools tests

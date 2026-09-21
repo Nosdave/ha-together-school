@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Together School",
+        "description": "Melde dich mit der Handynummer an, die im Profil deines Kindes hinterlegt ist. Dein Passwort wird nur einmal verwendet, um einen Zugangs-Token zu holen, und nicht gespeichert.",
+        "data": {
+          "login": "Handynummer",
+          "password": "Passwort",
+          "school_code": "Schulcode (Subdomain)",
+          "locale": "Sprache",
+          "active_hours_only": "Nur während der Fahrtzeiten abfragen"
+        },
+        "data_description": {
+          "login": "Im internationalen Format, z. B. +32470000000 - dieselbe wie in der App.",
+          "school_code": "Die Subdomain der Together-School-Seite deiner Schule - der Teil vor '.together-school.com'. Steht in der Web-Adresse oder erfährst du im Transportbüro.",
+          "active_hours_only": "Spart Abfragen: außerhalb der Schulfahrten bewegt sich der Bus ohnehin nicht."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Together School neu anmelden",
+        "description": "Der gespeicherte Zugangs-Token für {login} ist nicht mehr gültig. Gib einmal dein Passwort ein, um einen neuen zu holen.",
+        "data": {
+          "password": "Passwort"
+        }
+      },
+      "tenant": {
+        "title": "Tenant-ID",
+        "description": "Die Tenant-ID für '{school_code}' konnte nicht automatisch gelesen werden. Du findest sie in der Web-Konfiguration deiner Schule unter https://{school_code}.together-school.com/environment.values.js",
+        "data": {
+          "tenant_id": "Tenant-ID"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Anmeldung fehlgeschlagen. Prüfe die Handynummer (nicht die E-Mail-Adresse) und das Passwort.",
+      "cannot_connect": "Together-School-Backend nicht erreichbar.",
+      "invalid_school_code": "Das sieht nicht nach einem Schulcode aus. Nimm nur die Subdomain, also den Teil vor '.together-school.com'."
+    },
+    "abort": {
+      "already_configured": "Dieses Konto ist bereits eingerichtet.",
+      "reauth_successful": "Neuanmeldung erfolgreich."
+    }
+  },
+  "entity": {
+    "device_tracker": {
+      "bus": {
+        "name": "Bus"
+      }
+    },
+    "binary_sensor": {
+      "on_bus": {
+        "name": "Im Bus"
+      },
+      "missed_bus": {
+        "name": "Bus verpasst"
+      }
+    },
+    "sensor": {
+      "bus_status": {
+        "name": "Bus-Status",
+        "state": {
+          "no_service": "Keine Fahrt",
+          "scheduled": "Geplant",
+          "on_route": "Bus unterwegs",
+          "on_board": "Eingestiegen",
+          "completed": "Ausgestiegen",
+          "missed": "Verpasst"
+        }
+      },
+      "departure": {
+        "name": "Planmäßige Abfahrt"
+      },
+      "arrival": {
+        "name": "Planmäßige Ankunft"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Abfrage-Zeiten",
+        "description": "Die Integration fragt nur zu den unten stehenden Zeiten ab, wenn tatsächlich ein Bus fahren kann. Passe sie an den Stundenplan deiner Schule an.",
+        "data": {
+          "active_hours_only": "Nur während der Fahrtzeiten abfragen",
+          "active_windows": "Fahrtfenster"
+        },
+        "data_description": {
+          "active_windows": "Lokale Zeiten als HH:MM-HH:MM, mit Komma getrennt. Beispiel: 06:45-08:45, 14:45-17:15"
+        }
+      }
+    },
+    "error": {
+      "invalid_windows": "Format HH:MM-HH:MM verwenden, mit Komma getrennt, Beginn vor Ende."
+    }
+  }
+}

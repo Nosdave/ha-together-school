@@ -1,0 +1,12 @@
+{
+  "domain": "together_school",
+  "name": "Together School",
+  "codeowners": ["@Nosdave"],
+  "config_flow": true,
+  "documentation": "https://github.com/Nosdave/ha-together-school",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Nosdave/ha-together-school/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

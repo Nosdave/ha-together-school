@@ -1,0 +1,138 @@
+# Together School - example Lovelace dashboard
+#
+# Add via Settings -> Dashboards -> new dashboard -> "Raw configuration editor",
+# then paste and adjust the entity ids.
+#
+# Entity ids follow <platform>.school_bus_<child>_<key>, e.g. for a child
+# called Alex:
+#   device_tracker.school_bus_alex_bus
+#   binary_sensor.school_bus_alex_on_bus
+#   binary_sensor.school_bus_alex_missed_the_bus
+#   sensor.school_bus_alex_bus_status        (scheduled|on_route|on_board|
+#                                             completed|missed|no_service)
+#   sensor.school_bus_alex_scheduled_departure   (timestamp)
+#   sensor.school_bus_alex_scheduled_arrival     (timestamp)
+# Check yours under Developer tools -> States, filter for "school_bus".
+#
+# Design notes: status is never conveyed by colour alone - every state carries
+# an icon and a word. Times are timestamp sensors, so Home Assistant renders
+# them in your local timezone (the API speaks UTC) and can show them as
+# "in 12 minutes". The only chart is the check-in timeline, which is the one
+# thing here that is genuinely about change over time.
+
+views:
+  - title: School bus
+    path: school-bus
+    icon: mdi:bus-school
+    cards:
+      # ------------------------------------------------------------------
+      # Headline: one glance answers "is everything normal?"
+      # ------------------------------------------------------------------
+      - type: markdown
+        content: >-
+          {% set s = states('sensor.school_bus_alex_bus_status') %}
+          {% set bus = state_attr('sensor.school_bus_alex_bus_status', 'bus_number') %}
+          {% set dep = states('sensor.school_bus_alex_scheduled_departure') %}
+          {% set arr = states('sensor.school_bus_alex_scheduled_arrival') %}
+          {% if s == 'on_board' %}
+          ## 🚌 Alex is on the bus
+          {% elif s == 'missed' %}
+          ## 🔴 Bus missed
+          Alex was not picked up.
+          {% elif s == 'completed' %}
+          ## ✅ Arrived
+          Alex got off the bus.
+          {% elif s == 'on_route' %}
+          ## 🟡 Bus is on its way
+          Not checked in yet.
+          {% elif s == 'scheduled' %}
+          ## 🕒 Scheduled
+          {% else %}
+          ## ⚪ No run today
+          {% endif %}
+          {% if bus %}
+
+          Bus **{{ bus }}**
+          {%- set dir = state_attr('sensor.school_bus_alex_bus_status', 'direction') %}
+          {%- if dir == 'WAY_TO' %} · to school{% elif dir == 'WAY_BACK' %} · heading home{% endif %}
+          {% endif %}
+          {% if dep not in ['unknown', 'unavailable'] %}
+
+          Departure **{{ as_timestamp(dep) | timestamp_custom('%H:%M') }}**
+          {%- if arr not in ['unknown', 'unavailable'] %} → arrival **{{ as_timestamp(arr) | timestamp_custom('%H:%M') }}**{% endif %}
+          {% endif %}
+
+      # ------------------------------------------------------------------
+      # Live position - only worth showing while the bus actually reports one
+      # ------------------------------------------------------------------
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: device_tracker.school_bus_alex_bus
+            state_not: unavailable
+          - condition: state
+            entity: device_tracker.school_bus_alex_bus
+            state_not: unknown
+        card:
+          type: map
+          title: Live position
+          entities:
+            - entity: device_tracker.school_bus_alex_bus
+          # Auto-centres on the tracked entity, so no home coordinates are
+          # written into this file.
+          hours_to_show: 2
+          dark_mode: true
+
+      # ------------------------------------------------------------------
+      # Today's run, as plain text
+      # ------------------------------------------------------------------
+      - type: entities
+        title: Today's run
+        state_color: true
+        entities:
+          - entity: sensor.school_bus_alex_bus_status
+            name: Status
+          - entity: binary_sensor.school_bus_alex_on_bus
+            name: On the bus
+          - entity: binary_sensor.school_bus_alex_missed_the_bus
+            name: Missed the bus
+          - type: divider
+          - entity: sensor.school_bus_alex_scheduled_departure
+            name: Departure
+          - entity: sensor.school_bus_alex_scheduled_arrival
+            name: Arrival
+          - type: attribute
+            entity: sensor.school_bus_alex_bus_status
+            attribute: boarding_station
+            name: From
+          - type: attribute
+            entity: sensor.school_bus_alex_bus_status
+            attribute: arrival_station
+            name: To
+          - type: attribute
+            entity: sensor.school_bus_alex_bus_status
+            attribute: check_in_time
+            name: Checked in
+          - type: attribute
+            entity: sensor.school_bus_alex_bus_status
+            attribute: check_out_time
+            name: Checked out
+
+      # ------------------------------------------------------------------
+      # Change over time: when the boarding actually happened
+      # ------------------------------------------------------------------
+      - type: history-graph
+        title: Check-in today
+        hours_to_show: 24
+        entities:
+          - entity: binary_sensor.school_bus_alex_on_bus
+            name: On the bus
+          - entity: sensor.school_bus_alex_bus_status
+            name: Status
+
+      - type: logbook
+        title: Boarding events
+        hours_to_show: 24
+        entities:
+          - binary_sensor.school_bus_alex_on_bus
+          - binary_sensor.school_bus_alex_missed_the_bus
