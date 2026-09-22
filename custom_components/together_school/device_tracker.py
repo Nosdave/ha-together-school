@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity, extract_latlon
@@ -27,16 +28,36 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BusTracker(TogetherSchoolEntity, TrackerEntity):
+class BusTracker(TogetherSchoolEntity, TrackerEntity, RestoreEntity):
     """The bus on the map.
 
     Keeps the last known position after a run ends instead of disappearing:
     seeing where the bus stood, and for how long, is useful afterwards. The
     ``position_is_current`` attribute and ``last_located`` say how fresh it is.
+
+    The last fix is also restored across restarts, so a restart outside service
+    hours does not wipe the marker.
     """
 
     _attr_translation_key = "bus"
     _attr_icon = "mdi:bus-school"
+
+    _restored: dict[str, Any] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is None:
+            return
+        lat = last.attributes.get("latitude")
+        lon = last.attributes.get("longitude")
+        if lat is None or lon is None:
+            return
+        self._restored = {
+            "lat": lat,
+            "lon": lon,
+            "bus_id": last.attributes.get("bus_id"),
+            "at": last.attributes.get("last_located"),
+        }
 
     @property
     def unique_id(self) -> str:
@@ -51,9 +72,11 @@ class BusTracker(TogetherSchoolEntity, TrackerEntity):
         if isinstance(delivery, dict):
             if (live := extract_latlon(delivery.get("busLocation"))) is not None:
                 return live
-        remembered = self._pupil.get("last_seen")
+        remembered = self._pupil.get("last_seen") or self._restored
         if isinstance(remembered, dict):
-            return remembered.get("lat"), remembered.get("lon")
+            lat, lon = remembered.get("lat"), remembered.get("lon")
+            if lat is not None and lon is not None:
+                return lat, lon
         return None
 
     @property
@@ -78,7 +101,7 @@ class BusTracker(TogetherSchoolEntity, TrackerEntity):
         }
         if not attrs:
             # No live fix: report the remembered one and mark it as stale.
-            remembered = self._pupil.get("last_seen") or {}
+            remembered = self._pupil.get("last_seen") or self._restored or {}
             if remembered:
                 attrs = {
                     "bus_id": remembered.get("bus_id"),
