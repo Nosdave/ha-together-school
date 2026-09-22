@@ -283,6 +283,26 @@ class TestBoardedRun(unittest.TestCase):
                  "checkInTime": "00:05:00+0000"}
         self.assertEqual(route_checkin(entry).day, 22)
 
+    def test_boarding_before_departure_stays_on_the_same_day(self):
+        """Children board well before the scheduled departure.
+
+        Observed live: a 16:00 run with a 15:35 check-in. Treating "earlier
+        than departure" as a midnight wrap dated it a day into the future.
+        """
+        entry = {"startTime": "2026-09-22T14:00:00+0000",
+                 "arrivalTime": "14:21:00+0000",
+                 "checkInTime": "13:35:42+0000"}
+        checked_in = route_checkin(entry)
+        self.assertEqual(checked_in.day, 22)
+        self.assertEqual((checked_in.hour, checked_in.minute), (13, 35))
+
+    def test_real_midnight_run_still_rolls(self):
+        entry = {"startTime": "2026-09-22T23:50:00+0000",
+                 "arrivalTime": "00:15:00+0000",
+                 "checkInTime": "23:52:00+0000"}
+        self.assertEqual(route_arrival(entry).day, 23)
+        self.assertEqual(route_checkin(entry).day, 22)
+
     def test_location_type_changes_to_embarked_and_still_parses(self):
         """The GeoJSON "type" flips to Embarked once on board."""
         embarked = [{

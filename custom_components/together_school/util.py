@@ -345,12 +345,7 @@ def _anchored(entry: Any, key: str) -> Any:
     parsed = parse_dt(raw, start.date() if start else None)
     if parsed is None or start is None:
         return parsed
-    # A run that crosses midnight would otherwise land before its departure.
-    if parsed < start:
-        import datetime as _d
-
-        parsed += _d.timedelta(days=1)
-    return parsed
+    return _roll_past_midnight(parsed, start)
 
 
 def route_checkin(entry: Any) -> Any:
@@ -366,6 +361,21 @@ def route_checkout(entry: Any) -> Any:
 def route_missed(entry: Any) -> Any:
     """When the school recorded a missed pickup, as an aware datetime."""
     return _anchored(entry, "missedTime")
+
+
+# Boarding legitimately happens before the scheduled departure - children are
+# let on well ahead of time - so "earlier than departure" alone must NOT be
+# read as "the run crossed midnight". Only a gap this large means a wrap.
+_MIDNIGHT_WRAP = 12 * 3600
+
+
+def _roll_past_midnight(moment: Any, start: Any) -> Any:
+    """Move a bare time onto the next day only if it really wrapped."""
+    import datetime as _d
+
+    if (start - moment).total_seconds() > _MIDNIGHT_WRAP:
+        return moment + _d.timedelta(days=1)
+    return moment
 
 
 def route_departure(entry: Any) -> Any:
