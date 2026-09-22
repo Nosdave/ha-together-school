@@ -46,8 +46,18 @@ DEFAULT_LOCALE = "en"
 # --- Polling ---
 # Bus tracking only matters around commute windows. The coordinator polls at
 # SCAN_INTERVAL, but when active_hours_only is set it stays idle outside them.
+#
+# While a bus is actually driving we poll as fast as the official app does
+# (it refreshes every ~15 s); the rest of the time a slower beat is plenty and
+# keeps the load off the school's backend.
+SCAN_INTERVAL_LIVE = timedelta(seconds=15)
 SCAN_INTERVAL = timedelta(seconds=60)
-SCAN_INTERVAL_IDLE = timedelta(minutes=15)
+SCAN_INTERVAL_IDLE = timedelta(minutes=5)
+
+# Remembered coordinates of the fixed places, so the map still shows the stop
+# and the school when no run is active (the API only sends them during a run).
+CONF_STATION_LATLON = "station_latlon"
+CONF_SCHOOL_LATLON = "school_latlon"
 
 # Starting suggestion only - real timetables differ per school, so these are
 # editable in the options flow and stored per config entry.

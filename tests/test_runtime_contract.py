@@ -124,5 +124,19 @@ class TestFirstRefreshAlwaysFetches(unittest.TestCase):
         )
 
 
+class TestNoReloadLoop(unittest.TestCase):
+    """Persisting learned places writes to the entry - that must not reload."""
+
+    def test_update_listener_compares_options(self):
+        src = (_PKG / "__init__.py").read_text()
+        self.assertIn("options_snapshot", src)
+        listener = src[src.index("async def _async_entry_updated"):]
+        self.assertIn("entry.options", listener,
+                      "the listener must distinguish an options change from a "
+                      "data write, or learning the stop reloads in a loop")
+        self.assertIn("return", listener.split("async_reload")[0],
+                      "it must be able to bail out without reloading")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

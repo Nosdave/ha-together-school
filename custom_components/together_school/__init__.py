@@ -19,6 +19,8 @@ from .const import (
     CONF_LOCALE,
     CONF_LOGIN,
     CONF_SCHOOL_CODE,
+    CONF_SCHOOL_LATLON,
+    CONF_STATION_LATLON,
     CONF_TENANT_ID,
     DEFAULT_ACTIVE_WINDOWS,
     parse_windows,
@@ -31,6 +33,7 @@ PLATFORMS: list[Platform] = [
     Platform.DEVICE_TRACKER,
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
+    Platform.BUTTON,
 ]
 
 type TogetherSchoolConfigEntry = ConfigEntry[TogetherSchoolCoordinator]
@@ -57,6 +60,22 @@ async def async_setup_entry(
 
     windows = parse_windows(entry.options.get(CONF_ACTIVE_WINDOWS)) \
         or DEFAULT_ACTIVE_WINDOWS
+
+    def _as_pair(value):
+        """Stored as a [lat, lon] list in JSON."""
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            return float(value[0]), float(value[1])
+        return None
+
+    def _remember_places(station, school) -> None:
+        """Persist the fixed places so a restart keeps them on the map."""
+        data = {**entry.data}
+        if station:
+            data[CONF_STATION_LATLON] = list(station)
+        if school:
+            data[CONF_SCHOOL_LATLON] = list(school)
+        if data != entry.data:
+            hass.config_entries.async_update_entry(entry, data=data)
     coordinator = TogetherSchoolCoordinator(
         hass,
         api,
@@ -64,6 +83,9 @@ async def async_setup_entry(
             CONF_ACTIVE_HOURS_ONLY, entry.data.get(CONF_ACTIVE_HOURS_ONLY, True)
         ),
         active_windows=windows,
+        station=_as_pair(entry.data.get(CONF_STATION_LATLON)),
+        school=_as_pair(entry.data.get(CONF_SCHOOL_LATLON)),
+        on_places_learned=_remember_places,
     )
     try:
         await coordinator.async_setup()
@@ -76,16 +98,26 @@ async def async_setup_entry(
 
     await coordinator.async_config_entry_first_refresh()
 
+    # Remember which options this setup was built with, so the listener below
+    # can tell an options change from a routine data write (the learned stop
+    # and school coordinates) and avoid reloading itself in a loop.
+    coordinator.options_snapshot = dict(entry.options)
+
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
 
 
-async def _async_options_updated(
+async def _async_entry_updated(
     hass: HomeAssistant, entry: TogetherSchoolConfigEntry
 ) -> None:
-    """Apply changed options by reloading the entry."""
+    """Reload only when the user actually changed the options."""
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is not None and dict(entry.options) == getattr(
+        coordinator, "options_snapshot", None
+    ):
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

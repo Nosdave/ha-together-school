@@ -46,6 +46,12 @@
     "device_tracker": {
       "bus": {
         "name": "Bus"
+      },
+      "station": {
+        "name": "Haltestelle"
+      },
+      "school": {
+        "name": "Schule"
       }
     },
     "binary_sensor": {
@@ -54,6 +60,11 @@
       },
       "missed_bus": {
         "name": "Bus verpasst"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Aktualisieren"
       }
     },
     "sensor": {
@@ -66,6 +77,15 @@
           "on_board": "Eingestiegen",
           "completed": "Ausgestiegen",
           "missed": "Verpasst"
+        }
+      },
+      "punctuality": {
+        "name": "Pünktlichkeit",
+        "state": {
+          "on_time": "Pünktlich",
+          "delayed": "Verspätet",
+          "completed": "Fahrt beendet",
+          "unknown": "Unbekannt"
         }
       },
       "departure": {

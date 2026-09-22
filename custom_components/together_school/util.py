@@ -256,6 +256,23 @@ def route_state(entry: Any) -> str:
     return STATE_SCHEDULED
 
 
+PUNCTUALITY_UNKNOWN = "unknown"
+
+
+def punctuality(entry: Any) -> str:
+    """The backend's own verdict on the run, normalised to a few values.
+
+    Seen so far: ON_TIME while driving, COMPLETED afterwards. Anything else is
+    passed through lower-cased so a new value shows up rather than hiding.
+    """
+    if not isinstance(entry, dict):
+        return PUNCTUALITY_UNKNOWN
+    raw = entry.get("routeState")
+    if not raw:
+        return PUNCTUALITY_UNKNOWN
+    return str(raw).strip().lower()
+
+
 def bus_fix(delivery: Any) -> dict[str, Any]:
     """Metadata about the bus position fix, if the payload carries one.
 

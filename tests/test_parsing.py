@@ -39,6 +39,7 @@ route_arrival = _util.route_arrival
 route_departure = _util.route_departure
 route_state = _util.route_state
 bus_fix = _util.bus_fix
+punctuality = _util.punctuality
 route_checkin = _util.route_checkin
 route_checkout = _util.route_checkout
 select_route = _util.select_route
@@ -46,6 +47,7 @@ pick_id = _util.pick_id
 pupil_display_name = _util.pupil_display_name
 route_state = _util.route_state
 bus_fix = _util.bus_fix
+punctuality = _util.punctuality
 route_checkin = _util.route_checkin
 route_checkout = _util.route_checkout
 parse_tenant_id = _util.parse_tenant_id
@@ -350,6 +352,25 @@ class TestTwoRunDay(unittest.TestCase):
     def test_day_without_a_return_leg(self):
         chosen = select_route([self.MORNING_DONE])
         self.assertEqual(route_state(chosen), "completed")
+
+
+class TestPunctuality(unittest.TestCase):
+    """routeState is the backend's own verdict; it must never leak raw."""
+
+    def test_on_time(self):
+        self.assertEqual(punctuality({"routeState": "ON_TIME"}), "on_time")
+
+    def test_completed(self):
+        self.assertEqual(punctuality({"routeState": "COMPLETED"}), "completed")
+
+    def test_absent_is_unknown(self):
+        self.assertEqual(punctuality({}), "unknown")
+        self.assertEqual(punctuality({"routeState": None}), "unknown")
+        self.assertEqual(punctuality(None), "unknown")
+
+    def test_unseen_value_passes_through_lowercased(self):
+        """A new backend value should surface, not be silently swallowed."""
+        self.assertEqual(punctuality({"routeState": "DELAYED"}), "delayed")
 
 
 class TestTenantDiscovery(unittest.TestCase):

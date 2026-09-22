@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
 from .util import (
+    PUNCTUALITY_UNKNOWN,
     STATE_COMPLETED,
     STATE_MISSED,
     STATE_NO_SERVICE,
@@ -27,7 +28,11 @@ from .util import (
     route_departure,
     route_missed,
     route_state,
+    punctuality,
 )
+
+# Values the backend has been seen to use, plus a catch-all.
+PUNCTUALITY_STATES = ["on_time", "delayed", "completed", PUNCTUALITY_UNKNOWN]
 
 # Exposed so automations and dashboards can rely on a documented set.
 BUS_STATES = [
@@ -51,6 +56,7 @@ async def async_setup_entry(
         entities.append(BusStatusSensor(coordinator, pid))
         entities.append(DepartureSensor(coordinator, pid))
         entities.append(ArrivalSensor(coordinator, pid))
+        entities.append(PunctualitySensor(coordinator, pid))
     async_add_entities(entities)
 
 
@@ -129,3 +135,27 @@ class ArrivalSensor(TogetherSchoolEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"arrival_station": (self._route or {}).get("arrivalStation")}
+
+
+class PunctualitySensor(TogetherSchoolEntity, SensorEntity):
+    """Whether the run is on time - the backend reports this itself."""
+
+    _attr_translation_key = "punctuality"
+    _attr_icon = "mdi:clock-check-outline"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = PUNCTUALITY_STATES
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_punctuality"
+
+    @property
+    def native_value(self) -> str:
+        value = punctuality(self._route)
+        # An ENUM sensor must never report a value outside its options.
+        return value if value in PUNCTUALITY_STATES else PUNCTUALITY_UNKNOWN
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        raw = (self._route or {}).get("routeState")
+        return {"reported": raw} if raw else {}
