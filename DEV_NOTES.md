@@ -203,3 +203,30 @@ Full observed lifecycle of one run:
 | on route | true | list | IS_NOT_ON_BOARD | ON_TIME | - |
 | boarded | true | list | IS_ON_BOARD | ON_TIME | checkInTime |
 | finished | false | null | IS_NOT_ON_BOARD | COMPLETED | + checkOutTime |
+
+## The agenda endpoint serves PAST dates
+
+`combined/agenda/{date}` works for dates in the past, so how runs actually
+behave can be measured immediately instead of collected over weeks. See
+`tools/learn_delays.py`. What 60 days yielded for one pupil:
+
+- **`schedule` is the stop's timetable time, not when the child boards.**
+  On the morning leg the check-in lands a median of +6 min after it
+  (n=13, +2.6 .. +11.9), i.e. the bus reaches the stop later than printed.
+- On the afternoon leg the child boards a median of **21 min before** the
+  scheduled departure - they are let onto the parked bus at school well ahead
+  of time. A check-in earlier than the departure is therefore normal and must
+  not be read as a date rollover.
+- **Arrival vs. schedule:** morning median +0.3 min (essentially on time),
+  afternoon median **+5.7 min, and late in every completed case** (+1.9 ..
+  +16.4). `routeState` nonetheless reported `ON_TIME` throughout, so the
+  backend's own punctuality flag is optimistic and should not be trusted on
+  its own.
+- Entries exist for days the child did not travel (holiday timetable, absence);
+  only those carrying `checkInTime` represent an actual ride, and `missedTime`
+  marks a missed pickup.
+- The weekday pattern was stable across the window: the morning leg runs daily,
+  the return leg only on some weekdays.
+
+Positions are **not** in this history - `deliveryWithBus/location` is live only,
+so a route's stop list still has to be learned from live tracking.
