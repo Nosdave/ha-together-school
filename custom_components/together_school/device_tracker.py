@@ -11,7 +11,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity, extract_latlon
-from .util import bus_fix, route_arrival, route_departure
+from .icons import URL_BASE
+from .util import bus_fix, is_on_bus, route_arrival, route_departure
 
 
 async def async_setup_entry(
@@ -66,6 +67,14 @@ class BusTracker(TogetherSchoolEntity, TrackerEntity, RestoreEntity):
     @property
     def source_type(self) -> SourceType:
         return SourceType.GPS
+
+    @property
+    def entity_picture(self) -> str:
+        """A badge with the line number - the map card shows initials without."""
+        route = self._route or {}
+        label = route.get("busNumber") or route.get("name") or "BUS"
+        aboard = "1" if is_on_bus(route) else "0"
+        return f"{URL_BASE}/bus-{label}.svg?aboard={aboard}"
 
     def _position(self) -> tuple[float, float] | None:
         delivery = self._pupil.get("delivery")
@@ -146,7 +155,8 @@ class StationTracker(_PlaceTracker):
     """The child's own boarding stop."""
 
     _attr_translation_key = "station"
-    _attr_icon = "mdi:bus-stop"
+    _attr_icon = "mdi:home-map-marker"
+    _attr_entity_picture = f"{URL_BASE}/stop.svg"
 
     @property
     def unique_id(self) -> str:
@@ -172,6 +182,7 @@ class SchoolTracker(_PlaceTracker):
 
     _attr_translation_key = "school"
     _attr_icon = "mdi:school"
+    _attr_entity_picture = f"{URL_BASE}/school.svg"
 
     @property
     def unique_id(self) -> str:

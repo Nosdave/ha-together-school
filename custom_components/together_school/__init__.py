@@ -26,6 +26,7 @@ from .const import (
     parse_windows,
 )
 from .coordinator import TogetherSchoolCoordinator
+from .icons import async_register as async_register_markers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: TogetherSchoolConfigEntry
 ) -> bool:
     """Set up Together School from a config entry."""
+    async_register_markers(hass)
 
     api = TogetherSchoolApi(
         async_get_clientsession(hass),

@@ -374,6 +374,42 @@ class TestTwoRunDay(unittest.TestCase):
         self.assertEqual(route_state(chosen), "completed")
 
 
+class TestDuplicateRuns(unittest.TestCase):
+    """The backend sometimes returns a run twice, the twin empty.
+
+    Left in, the empty twin reads as "scheduled" and outranks the finished
+    record once the run is over - the dashboard would claim a completed trip
+    is still upcoming.
+    """
+
+    DONE = {"direction": "WAY_TO", "startTime": "2026-09-21T05:40:00+0000",
+            "busNumber": "X", "arrivalTime": "06:05:00+0000",
+            "checkInTime": "05:50:46+0000", "checkOutTime": "06:05:18+0000",
+            "routeState": "COMPLETED"}
+    TWIN = {"direction": "WAY_TO", "startTime": "2026-09-21T05:40:00+0000",
+            "busNumber": "X", "arrivalTime": "06:05:00+0000",
+            "checkInTime": None, "checkOutTime": None, "routeState": None}
+
+    def test_twin_is_dropped_either_way_round(self):
+        for order in ([self.DONE, self.TWIN], [self.TWIN, self.DONE]):
+            routes = bus_routes({"BUS_ROUTE": order})
+            self.assertEqual(len(routes), 1)
+            self.assertEqual(route_state(select_route(routes)), "completed")
+
+    def test_genuinely_different_runs_are_both_kept(self):
+        afternoon = dict(self.TWIN, direction="WAY_BACK",
+                         startTime="2026-09-21T14:00:00+0000")
+        routes = bus_routes({"BUS_ROUTE": [self.DONE, afternoon]})
+        self.assertEqual(len(routes), 2)
+
+    def test_order_within_the_day_is_preserved(self):
+        afternoon = dict(self.TWIN, direction="WAY_BACK",
+                         startTime="2026-09-21T14:00:00+0000")
+        routes = bus_routes({"BUS_ROUTE": [self.DONE, self.TWIN, afternoon]})
+        self.assertEqual([r["direction"] for r in routes],
+                         ["WAY_TO", "WAY_BACK"])
+
+
 class TestPunctuality(unittest.TestCase):
     """routeState is the backend's own verdict; it must never leak raw."""
 

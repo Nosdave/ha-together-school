@@ -57,6 +57,8 @@ async def async_setup_entry(
         entities.append(DepartureSensor(coordinator, pid))
         entities.append(ArrivalSensor(coordinator, pid))
         entities.append(PunctualitySensor(coordinator, pid))
+        entities.append(CheckInSensor(coordinator, pid))
+        entities.append(CheckOutSensor(coordinator, pid))
     async_add_entities(entities)
 
 
@@ -159,3 +161,40 @@ class PunctualitySensor(TogetherSchoolEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         raw = (self._route or {}).get("routeState")
         return {"reported": raw} if raw else {}
+
+
+class CheckInSensor(TogetherSchoolEntity, SensorEntity):
+    """When the child boarded.
+
+    A timestamp sensor rather than an attribute: an absent attribute renders as
+    the epoch (01:00 local), which reads like a real time and is worse than
+    showing nothing.
+    """
+
+    _attr_translation_key = "checked_in"
+    _attr_icon = "mdi:login"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_checked_in"
+
+    @property
+    def native_value(self) -> dt.datetime | None:
+        return route_checkin(self._route)
+
+
+class CheckOutSensor(TogetherSchoolEntity, SensorEntity):
+    """When the child got off."""
+
+    _attr_translation_key = "checked_out"
+    _attr_icon = "mdi:logout"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_checked_out"
+
+    @property
+    def native_value(self) -> dt.datetime | None:
+        return route_checkout(self._route)

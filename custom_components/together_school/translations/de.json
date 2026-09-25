@@ -93,6 +93,12 @@
       },
       "arrival": {
         "name": "Planmäßige Ankunft"
+      },
+      "checked_in": {
+        "name": "Eingestiegen"
+      },
+      "checked_out": {
+        "name": "Ausgestiegen"
       }
     }
   },

@@ -224,13 +224,47 @@ def parse_dt(value: Any, on_date: Any = None) -> Any:
     return combined
 
 
+def _progress(entry: Any) -> int:
+    """How far along a run is - used to pick between duplicate records."""
+    if not isinstance(entry, dict):
+        return -1
+    if entry.get("checkOutTime") or entry.get("missedTime"):
+        return 4
+    if entry.get("checkInTime"):
+        return 3
+    if entry.get("online") or entry.get("activeRouteId"):
+        return 2
+    if entry.get("routeState"):
+        return 1
+    return 0
+
+
 def bus_routes(agenda: Any) -> list[dict[str, Any]]:
-    """The BUS_ROUTE entries of a combined-agenda response."""
-    if isinstance(agenda, dict):
-        entries = agenda.get(AGENDA_BUS_KEY)
-        if isinstance(entries, list):
-            return [e for e in entries if isinstance(e, dict)]
-    return []
+    """The BUS_ROUTE entries of a combined-agenda response.
+
+    The backend sometimes returns the same run twice: once filled in and once
+    as an empty twin (same direction and start, but no ids and no timestamps).
+    Left in, the empty twin reads as "scheduled" and would outrank the finished
+    record once the run is over. Only the more advanced of the pair is kept.
+    """
+    if not isinstance(agenda, dict):
+        return []
+    entries = agenda.get(AGENDA_BUS_KEY)
+    if not isinstance(entries, list):
+        return []
+    best: dict[tuple, dict[str, Any]] = {}
+    order: list[tuple] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = (entry.get("direction"), entry.get("startTime"),
+               entry.get("busNumber"))
+        if key not in best:
+            best[key] = entry
+            order.append(key)
+        elif _progress(entry) > _progress(best[key]):
+            best[key] = entry
+    return [best[k] for k in order]
 
 
 # Values the live API reports once a run is active.
