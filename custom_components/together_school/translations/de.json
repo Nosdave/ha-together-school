@@ -60,6 +60,9 @@
       },
       "missed_bus": {
         "name": "Bus verpasst"
+      },
+      "arriving_soon": {
+        "name": "Kommt gleich"
       }
     },
     "button": {
@@ -99,6 +102,27 @@
       },
       "checked_out": {
         "name": "Ausgestiegen"
+      },
+      "stop_eta": {
+        "name": "Bus an unserer Haltestelle"
+      },
+      "minutes_to_stop": {
+        "name": "Minuten bis zur Haltestelle"
+      }
+    },
+    "event": {
+      "bus_event": {
+        "name": "Bus-Ereignis",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "approaching": "Kommt gleich an",
+              "checked_in": "Eingestiegen",
+              "checked_out": "Ausgestiegen",
+              "missed": "Bus verpasst"
+            }
+          }
+        }
       }
     }
   },
@@ -109,10 +133,14 @@
         "description": "Die Integration fragt nur zu den unten stehenden Zeiten ab, wenn tatsächlich ein Bus fahren kann. Passe sie an den Stundenplan deiner Schule an.",
         "data": {
           "active_hours_only": "Nur während der Fahrtzeiten abfragen",
-          "active_windows": "Fahrtfenster"
+          "active_windows": "Fahrtfenster",
+          "lead_minutes": "Vorwarnzeit in Minuten",
+          "travel_time_sensor": "Fahrzeit-Sensor (optional)"
         },
         "data_description": {
-          "active_windows": "Lokale Zeiten als HH:MM-HH:MM, mit Komma getrennt. Beispiel: 06:45-08:45, 14:45-17:15"
+          "active_windows": "Lokale Zeiten als HH:MM-HH:MM, mit Komma getrennt. Beispiel: 06:45-08:45, 14:45-17:15",
+          "lead_minutes": "Wie früh 'Kommt gleich' anspringen soll.",
+          "travel_time_sensor": "Ein Sensor mit Fahrminuten vom Bus zu eurer Haltestelle (Waze, Google, HERE). Ohne ihn rechnet die Prognose mit der Eigenbewegung des Busses."
         }
       }
     },

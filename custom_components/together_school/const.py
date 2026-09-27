@@ -65,6 +65,21 @@ DEFAULT_ACTIVE_WINDOWS = [("06:45", "08:45"), ("14:45", "17:15")]
 
 CONF_ACTIVE_WINDOWS = "active_windows"
 
+# How far ahead the "arriving soon" trigger should fire. Kept as an option
+# because it is a property of the household, not of the bus.
+CONF_LEAD_MINUTES = "lead_minutes"
+DEFAULT_LEAD_MINUTES = 5
+
+# Optional: an external travel-time sensor (Waze, Google, HERE ...) measuring
+# bus -> stop. Without it the forecast falls back to the bus's own movement,
+# so the integration never depends on another one being installed.
+CONF_TRAVEL_SENSOR = "travel_time_sensor"
+
+# Learned offsets between the timetable and the moment the bus really reaches
+# the stop, per direction. Measured from positions, never from the check-in:
+# that is scanned by a person and lags the bus by minutes.
+CONF_STOP_OFFSETS = "stop_offsets"
+
 
 def normalise_school_code(value) -> str:
     """Reduce whatever the user pasted to a bare subdomain label.

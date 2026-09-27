@@ -20,12 +20,22 @@ from .const import (
     SCAN_INTERVAL_LIVE,
 )
 from .util import (
+    LEARNED_KEEP,
+    SOURCE_LEARNED,
+    SOURCE_LIVE,
+    SOURCE_TIMETABLE,
     STATE_ON_BOARD,
     STATE_ON_ROUTE,
+    STOP_RADIUS_M,
     bus_routes,
+    distance_m,
+    eta_from_position,
     extract_latlon,
     extract_pupils,
+    median,
     pick_id,
+    route_arrival,
+    route_departure,
     route_state,
     select_route,
 )
@@ -61,6 +71,10 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         station: tuple[float, float] | None = None,
         school: tuple[float, float] | None = None,
         on_places_learned: Any = None,
+        lead_minutes: int = 5,
+        travel_sensor: str | None = None,
+        stop_offsets: dict[str, list[float]] | None = None,
+        on_offsets_learned: Any = None,
     ) -> None:
         super().__init__(
             hass,
@@ -83,6 +97,15 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._on_places_learned = on_places_learned
         # Filled in by async_setup_entry; see _async_entry_updated.
         self.options_snapshot: dict[str, Any] | None = None
+        # Recent position fixes per pupil, for speed and live arrival.
+        self._trail: dict[str, list[tuple[Any, float, float]]] = {}
+        # Which run we have already recorded a stop arrival for.
+        self._arrived: dict[str, str] = {}
+        # Learned timetable->reality offsets in minutes, per direction.
+        self.stop_offsets: dict[str, list[float]] = dict(stop_offsets or {})
+        self._on_offsets_learned = on_offsets_learned
+        self.travel_sensor = travel_sensor
+        self.lead_minutes = lead_minutes
         # Last known bus position per pupil, so the map keeps showing where the
         # bus was instead of vanishing the moment a run ends.
         self.last_seen: dict[str, dict[str, Any]] = {}
@@ -146,6 +169,8 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     entry["agenda"] = None
                 self._remember(pid, entry)
                 entry["last_seen"] = self.last_seen.get(pid)
+                self._observe_stop_arrival(pid, entry, now)
+                entry["forecast"] = self._forecast(pid, entry, now)
                 result["pupils"][pid] = entry
         except TogetherSchoolAuthError as err:
             # Token no longer valid and we hold no password -> ask the user.
@@ -201,3 +226,126 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Poll interval -> %s", wanted)
             self.update_interval = wanted
 
+
+    # -- arrival forecast -------------------------------------------------
+
+    def _bus_position(self, entry: dict[str, Any]) -> tuple[float, float] | None:
+        delivery = entry.get("delivery")
+        if isinstance(delivery, dict):
+            return extract_latlon(delivery.get("busLocation"))
+        return None
+
+    def _observe_stop_arrival(
+        self, pupil_id: str, entry: dict[str, Any], now: dt.datetime
+    ) -> None:
+        """Learn how late the bus really is at this stop.
+
+        Measured from the position, never from the check-in: that is scanned by
+        a supervisor and trails the bus by minutes, which would push every
+        forecast late. One measurement per run, keyed by the run itself so a
+        restart cannot double-count it.
+        """
+        position = self._bus_position(entry)
+        if position is None:
+            return
+        trail = self._trail.setdefault(pupil_id, [])
+        trail.append((now, position[0], position[1]))
+        del trail[:-6]
+
+        if self.station is None:
+            return
+        route = select_route(bus_routes(entry.get("agenda")))
+        if not route:
+            return
+        run_id = str(route.get("activeRouteId") or route.get("startTime") or "")
+        if not run_id or self._arrived.get(pupil_id) == run_id:
+            return
+        if (distance_m(position, self.station) or 1e9) > STOP_RADIUS_M:
+            return
+
+        # The timetable moment this stop was due: the departure on the way out,
+        # the arrival on the way home.
+        due = (route_arrival(route) if route.get("direction") == "WAY_BACK"
+               else route_departure(route))
+        self._arrived[pupil_id] = run_id
+        if due is None:
+            return
+        offset = (now - due).total_seconds() / 60.0
+        if abs(offset) > 45:
+            # Implausible: a stale fix or a mismatched run, not a real delay.
+            return
+        direction = route.get("direction") or "?"
+        values = self.stop_offsets.setdefault(direction, [])
+        values.append(round(offset, 1))
+        del values[:-LEARNED_KEEP]
+        _LOGGER.debug("Learned stop offset %s %+.1f min", direction, offset)
+        if self._on_offsets_learned:
+            self._on_offsets_learned(self.stop_offsets)
+
+    def _travel_minutes(self) -> float | None:
+        """Minutes to the stop from the user's own travel-time sensor, if any."""
+        if not self.travel_sensor:
+            return None
+        state = self.hass.states.get(self.travel_sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            return None
+
+    def _forecast(
+        self, pupil_id: str, entry: dict[str, Any], now: dt.datetime
+    ) -> dict[str, Any]:
+        """When the bus should reach this child's own stop.
+
+        Three sources, in descending order of trust: a routing sensor the user
+        configured, the bus's own movement, and the timetable plus what we have
+        learned. Which one was used is reported, so an automation can insist on
+        a live figure before doing something irreversible.
+        """
+        route = select_route(bus_routes(entry.get("agenda")))
+        blank = {"eta": None, "source": None, "minutes": None, "direction": None,
+                 "run_id": None, "done": True}
+        if not route:
+            return blank
+
+        direction = route.get("direction")
+        state = route_state(route)
+        run_id = str(route.get("activeRouteId") or route.get("startTime") or "")
+        # Once the child is aboard (outbound) or off (homebound), the question
+        # "when does the bus reach our stop" is answered.
+        done = (
+            state in ("completed", "missed", "no_service")
+            or (direction == "WAY_TO" and route.get("checkInTime"))
+            or (direction == "WAY_BACK" and route.get("checkOutTime"))
+        )
+        if done or direction not in ("WAY_TO", "WAY_BACK"):
+            return {**blank, "direction": direction, "run_id": run_id}
+
+        eta = None
+        source = None
+        live = state in (STATE_ON_ROUTE, STATE_ON_BOARD)
+
+        if live and (minutes := self._travel_minutes()) is not None:
+            eta = now + dt.timedelta(minutes=minutes)
+            source = SOURCE_LIVE
+        elif live:
+            eta = eta_from_position(self._trail.get(pupil_id), self.station, now)
+            if eta is not None:
+                source = SOURCE_LIVE
+
+        if eta is None:
+            due = (route_arrival(route) if direction == "WAY_BACK"
+                   else route_departure(route))
+            if due is not None:
+                offset = median(self.stop_offsets.get(direction)) or 0.0
+                eta = due + dt.timedelta(minutes=offset)
+                source = SOURCE_LEARNED if offset else SOURCE_TIMETABLE
+
+        minutes = None
+        if eta is not None:
+            minutes = max(0, round((eta - now).total_seconds() / 60))
+        return {"eta": eta, "source": source, "minutes": minutes,
+                "direction": direction, "run_id": run_id, "done": False,
+                "samples": len(self.stop_offsets.get(direction or "", []))}

@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
 from .util import (
+    SOURCE_LIVE,
     STATE_MISSED,
     is_on_bus,
     route_checkin,
@@ -33,6 +34,7 @@ async def async_setup_entry(
     for pid in coordinator.pupil_ids:
         entities.append(OnBusBinarySensor(coordinator, pid))
         entities.append(MissedBusBinarySensor(coordinator, pid))
+        entities.append(ArrivingSoonBinarySensor(coordinator, pid))
     async_add_entities(entities)
 
 
@@ -78,3 +80,49 @@ class MissedBusBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"missed_time": route_missed(self._route or {})}
+
+
+class ArrivingSoonBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
+    """The automation trigger: the bus is nearly at the stop.
+
+    Latched on purpose. A raw comparison against the forecast crosses the
+    threshold, slips back a few seconds later and crosses again - which would
+    call a lift three times and repeat an announcement. Once it turns on it
+    stays on for that run, and only resets when the next run comes round.
+    """
+
+    _attr_translation_key = "arriving_soon"
+    _attr_icon = "mdi:bus-clock"
+
+    _latched_run: str | None = None
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_arriving_soon"
+
+    @property
+    def is_on(self) -> bool:
+        forecast = self._pupil.get("forecast") or {}
+        run_id = forecast.get("run_id")
+        if forecast.get("done") or not run_id:
+            # A finished run releases the latch for the next one.
+            if self._latched_run == run_id:
+                self._latched_run = None
+            return False
+        if self._latched_run == run_id:
+            return True
+        minutes = forecast.get("minutes")
+        if minutes is not None and minutes <= self.coordinator.lead_minutes:
+            self._latched_run = run_id
+            return True
+        return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        forecast = self._pupil.get("forecast") or {}
+        return {
+            "lead_minutes": self.coordinator.lead_minutes,
+            "minutes_to_stop": forecast.get("minutes"),
+            "source": forecast.get("source"),
+            "is_live": forecast.get("source") == SOURCE_LIVE,
+        }

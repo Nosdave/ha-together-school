@@ -18,11 +18,15 @@ from .const import (
     CONF_DEVICE_TOKEN,
     CONF_LOCALE,
     CONF_LOGIN,
+    CONF_LEAD_MINUTES,
     CONF_SCHOOL_CODE,
     CONF_SCHOOL_LATLON,
+    CONF_STOP_OFFSETS,
+    CONF_TRAVEL_SENSOR,
     CONF_STATION_LATLON,
     CONF_TENANT_ID,
     DEFAULT_ACTIVE_WINDOWS,
+    DEFAULT_LEAD_MINUTES,
     parse_windows,
 )
 from .coordinator import TogetherSchoolCoordinator
@@ -35,6 +39,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.SENSOR,
     Platform.BUTTON,
+    Platform.EVENT,
 ]
 
 type TogetherSchoolConfigEntry = ConfigEntry[TogetherSchoolCoordinator]
@@ -69,6 +74,13 @@ async def async_setup_entry(
             return float(value[0]), float(value[1])
         return None
 
+    def _remember_offsets(offsets) -> None:
+        """Persist what we have learned, so a restart keeps the calibration."""
+        if entry.data.get(CONF_STOP_OFFSETS) != offsets:
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_STOP_OFFSETS: dict(offsets)}
+            )
+
     def _remember_places(station, school) -> None:
         """Persist the fixed places so a restart keeps them on the map."""
         data = {**entry.data}
@@ -88,6 +100,11 @@ async def async_setup_entry(
         station=_as_pair(entry.data.get(CONF_STATION_LATLON)),
         school=_as_pair(entry.data.get(CONF_SCHOOL_LATLON)),
         on_places_learned=_remember_places,
+        lead_minutes=int(entry.options.get(CONF_LEAD_MINUTES,
+                                           DEFAULT_LEAD_MINUTES)),
+        travel_sensor=entry.options.get(CONF_TRAVEL_SENSOR) or None,
+        stop_offsets=entry.data.get(CONF_STOP_OFFSETS) or {},
+        on_offsets_learned=_remember_offsets,
     )
     try:
         await coordinator.async_setup()

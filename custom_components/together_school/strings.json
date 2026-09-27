@@ -60,6 +60,9 @@
       },
       "missed_bus": {
         "name": "Missed the bus"
+      },
+      "arriving_soon": {
+        "name": "Arriving soon"
       }
     },
     "button": {
@@ -99,6 +102,27 @@
       },
       "checked_out": {
         "name": "Checked out"
+      },
+      "stop_eta": {
+        "name": "Bus at our stop"
+      },
+      "minutes_to_stop": {
+        "name": "Minutes to our stop"
+      }
+    },
+    "event": {
+      "bus_event": {
+        "name": "Bus event",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "approaching": "Approaching the stop",
+              "checked_in": "Checked in",
+              "checked_out": "Checked out",
+              "missed": "Missed the bus"
+            }
+          }
+        }
       }
     }
   },
@@ -109,10 +133,14 @@
         "description": "The integration only queries during the times below, when a bus can actually be running. Adjust them to your school's timetable.",
         "data": {
           "active_hours_only": "Only poll during commute hours",
-          "active_windows": "Commute windows"
+          "active_windows": "Commute windows",
+          "lead_minutes": "Warn this many minutes ahead",
+          "travel_time_sensor": "Travel-time sensor (optional)"
         },
         "data_description": {
-          "active_windows": "Local times as HH:MM-HH:MM, separated by commas. Example: 06:45-08:45, 14:45-17:15"
+          "active_windows": "Local times as HH:MM-HH:MM, separated by commas. Example: 06:45-08:45, 14:45-17:15",
+          "lead_minutes": "How far ahead 'arriving soon' should switch on.",
+          "travel_time_sensor": "A sensor giving minutes from the bus to your stop (Waze, Google, HERE). Without one the forecast uses the bus's own movement."
         }
       }
     },

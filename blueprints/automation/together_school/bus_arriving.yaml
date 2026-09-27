@@ -1,0 +1,78 @@
+blueprint:
+  name: Together School - bus arriving at our stop
+  description: >-
+    React when the school bus is nearly at your stop: announce it, switch a
+    light, call a lift - whatever your home can do.
+
+    The integration decides *when*; this blueprint decides *what happens*. It
+    fires once per run, because the trigger entity latches: a raw forecast
+    crosses the threshold, slips back and crosses again, which would repeat an
+    announcement and call a lift three times.
+
+    Set how far ahead it fires in the integration's options, not here.
+  domain: automation
+  source_url: https://github.com/Nosdave/ha-together-school/blob/main/blueprints/automation/together_school/bus_arriving.yaml
+  input:
+    arriving_entity:
+      name: "'Arriving soon' sensor"
+      description: The child whose bus this is about.
+      selector:
+        entity:
+          filter:
+            - integration: together_school
+              domain: binary_sensor
+    require_live:
+      name: Only act on a live position
+      description: >-
+        Before the bus reports its position the forecast is the timetable plus
+        what has been learned, which can be a couple of minutes out. Turn this
+        on for anything you would rather not do too early - calling a lift, for
+        instance. Note that on a short morning run there may be only a minute
+        or two of live tracking, so this can mean no trigger at all.
+      default: false
+      selector:
+        boolean:
+    conditions:
+      name: Extra conditions
+      description: Anyone home, not during the night, and so on.
+      default: []
+      selector:
+        condition:
+    actions:
+      name: What should happen
+      description: >-
+        Announcement, light, lift, notification - anything. The bus number and
+        the minutes remaining are available as `bus_number` and `minutes`.
+      selector:
+        action:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input arriving_entity
+    from: "off"
+    to: "on"
+
+conditions:
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ not require_live }}"
+      - condition: template
+        value_template: >-
+          {{ state_attr(arriving_entity, 'is_live') | default(false) }}
+  - condition: and
+    conditions: !input conditions
+
+variables:
+  arriving_entity: !input arriving_entity
+  require_live: !input require_live
+  minutes: "{{ state_attr(arriving_entity, 'minutes_to_stop') }}"
+  bus_number: >-
+    {{ state_attr(arriving_entity, 'bus_number')
+       | default(states(arriving_entity | replace('binary_sensor.', 'sensor.')
+                        | replace('_arriving_soon', '_bus_status'))) }}
+
+actions: !input actions

@@ -59,6 +59,8 @@ async def async_setup_entry(
         entities.append(PunctualitySensor(coordinator, pid))
         entities.append(CheckInSensor(coordinator, pid))
         entities.append(CheckOutSensor(coordinator, pid))
+        entities.append(StopEtaSensor(coordinator, pid))
+        entities.append(MinutesToStopSensor(coordinator, pid))
     async_add_entities(entities)
 
 
@@ -198,3 +200,49 @@ class CheckOutSensor(TogetherSchoolEntity, SensorEntity):
     @property
     def native_value(self) -> dt.datetime | None:
         return route_checkout(self._route)
+
+
+class StopEtaSensor(TogetherSchoolEntity, SensorEntity):
+    """When the bus should reach this child's own stop.
+
+    The headline figure for automations: it answers "when do we need to be
+    downstairs". `source` says whether that is live or an estimate, so an
+    automation can require a live figure before, say, calling a lift.
+    """
+
+    _attr_translation_key = "stop_eta"
+    _attr_icon = "mdi:bus-marker"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_stop_eta"
+
+    @property
+    def native_value(self) -> dt.datetime | None:
+        return (self._pupil.get("forecast") or {}).get("eta")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        f = self._pupil.get("forecast") or {}
+        return {k: v for k, v in {
+            "source": f.get("source"),
+            "direction": f.get("direction"),
+            "learned_samples": f.get("samples"),
+        }.items() if v is not None}
+
+
+class MinutesToStopSensor(TogetherSchoolEntity, SensorEntity):
+    """Whole minutes until the bus reaches the stop."""
+
+    _attr_translation_key = "minutes_to_stop"
+    _attr_icon = "mdi:timer-outline"
+    _attr_native_unit_of_measurement = "min"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_minutes_to_stop"
+
+    @property
+    def native_value(self) -> int | None:
+        return (self._pupil.get("forecast") or {}).get("minutes")

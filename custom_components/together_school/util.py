@@ -439,3 +439,101 @@ def route_arrival(entry: Any) -> Any:
 
         arrival += _d.timedelta(days=1)
     return arrival
+
+
+# --- Arrival forecast for the child's own stop ------------------------------
+#
+# The timetable alone is not what happens, and the check-in is no substitute:
+# it is scanned by a supervisor and lags the bus by minutes. The reliable
+# signal is the bus position, so the offset between the timetable and the
+# moment the bus actually reaches the stop is measured per installation and
+# kept as a rolling median.
+
+STOP_RADIUS_M = 60          # "the bus is at the stop"
+MIN_SPEED_KMH = 3.0         # below this, treat the bus as standing
+MAX_SPEED_KMH = 90.0        # above this, assume a bad fix
+ROAD_FACTOR = 1.35          # straight line -> road distance, rough but stable
+LEARNED_KEEP = 12           # how many past runs feed the median
+
+SOURCE_LIVE = "live"
+SOURCE_LEARNED = "timetable+learned"
+SOURCE_TIMETABLE = "timetable"
+
+
+def distance_m(a: Any, b: Any) -> float | None:
+    """Metres between two (lat, lon) pairs, flat-earth - fine at city scale."""
+    import math
+
+    if not a or not b:
+        return None
+    dlat = (a[0] - b[0]) * 111320.0
+    dlon = (a[1] - b[1]) * 111320.0 * math.cos(math.radians((a[0] + b[0]) / 2))
+    return math.hypot(dlat, dlon)
+
+
+def median(values: Any) -> float | None:
+    """Median of a sequence; None when empty.
+
+    Deliberately not the mean: one freak run (roadworks, a breakdown) should
+    not move the everyday expectation.
+    """
+    items = sorted(v for v in (values or []) if isinstance(v, (int, float)))
+    if not items:
+        return None
+    mid = len(items) // 2
+    if len(items) % 2:
+        return float(items[mid])
+    return (items[mid - 1] + items[mid]) / 2.0
+
+
+def speed_kmh(fixes: Any) -> float | None:
+    """Recent ground speed from consecutive position fixes.
+
+    ``fixes`` is a sequence of ``(timestamp, lat, lon)`` oldest-first. Returns
+    None when the bus is standing or the fixes are implausible, so the caller
+    can fall back rather than extrapolate nonsense.
+    """
+    if not fixes or len(fixes) < 2:
+        return None
+    total_m = 0.0
+    total_s = 0.0
+    for (t0, la0, lo0), (t1, la1, lo1) in zip(fixes, fixes[1:]):
+        seconds = (t1 - t0).total_seconds()
+        if seconds <= 0:
+            continue
+        step = distance_m((la0, lo0), (la1, lo1))
+        if step is None:
+            continue
+        total_m += step
+        total_s += seconds
+    if total_s <= 0:
+        return None
+    kmh = (total_m / total_s) * 3.6
+    if kmh < MIN_SPEED_KMH or kmh > MAX_SPEED_KMH:
+        return None
+    return kmh
+
+
+def eta_from_position(fixes: Any, stop: Any, now: Any) -> Any:
+    """When the bus should reach the stop, from its own movement.
+
+    Straight-line distance scaled by a road factor, divided by the recent
+    speed. Crude next to a routing service, but it needs no extra integration
+    and degrades honestly: if the bus is standing, it returns None instead of
+    promising an arrival.
+    """
+    import datetime as _dt
+
+    if not fixes or not stop:
+        return None
+    last = fixes[-1]
+    remaining = distance_m((last[1], last[2]), stop)
+    if remaining is None:
+        return None
+    if remaining <= STOP_RADIUS_M:
+        return now
+    kmh = speed_kmh(fixes)
+    if not kmh:
+        return None
+    seconds = (remaining * ROAD_FACTOR) / (kmh / 3.6)
+    return now + _dt.timedelta(seconds=seconds)

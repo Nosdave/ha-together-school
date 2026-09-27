@@ -25,6 +25,10 @@ One device per child, discovered automatically from your parent account:
 | `sensor.…_bus_status` | `scheduled` / `on_route` / `on_board` / `completed` / `missed` / `no_service`, with bus number and stop names as attributes |
 | `sensor.…_scheduled_departure` | timestamp of the pickup |
 | `sensor.…_scheduled_arrival` | timestamp of the arrival |
+| `sensor.…_bus_at_our_stop` | **when the bus reaches your own stop** - live while it is moving, otherwise the timetable plus what has been learned; `source` says which |
+| `sensor.…_minutes_to_our_stop` | the same as a countdown |
+| `binary_sensor.…_arriving_soon` | **the automation trigger** - latches for the run so a lift is not called three times |
+| `event.…_bus_event` | `approaching` / `checked_in` / `checked_out` / `missed`, each fired once per run |
 
 Timetable and live position come from different endpoints: the schedule is
 available as soon as a school day is planned, while the map position only fills
@@ -76,6 +80,36 @@ Ready-to-paste examples live in [`examples/`](examples/):
   morning view that puts the school bus next to your own commute page.
 - [`automations.yaml`](examples/automations.yaml) – notifications for check-in,
   check-out, bus approaching home, and a missed pickup.
+
+## Automating on it
+
+The integration answers *when*; what happens is yours. Two things make it
+usable as a trigger rather than a number that jitters:
+
+**It latches.** A raw forecast crosses the five-minute mark, slips back and
+crosses again - an announcement would repeat and a lift would be called three
+times. `arriving_soon` turns on once per run and stays on.
+
+**It says how much to trust it.** The `source` attribute is `live` when the
+figure comes from the bus's own position (or a travel-time sensor you
+configured) and `timetable+learned` otherwise. An automation can insist on a
+live figure before doing something it cannot take back.
+
+Where the forecast comes from, in descending order of trust: a travel-time
+sensor you point at in the options, the bus's own movement, or the timetable
+plus the offset the integration measures for itself. That offset is learned
+from **positions**, never from the check-in - the check-in is scanned by a
+supervisor and trails the bus by minutes, which would push every forecast late.
+
+A blueprint is included: **Settings → Automations → Blueprints → Import**, then
+point it at
+[`bus_arriving.yaml`](blueprints/automation/together_school/bus_arriving.yaml).
+It asks for the child, whether to require a live position, extra conditions,
+and what should happen - so the announcement, the light and the lift stay in
+your house, not in the integration.
+
+How far ahead it fires is set in the integration's options, not in the
+blueprint, because it belongs to the forecast rather than to any one action.
 
 ## Polling
 

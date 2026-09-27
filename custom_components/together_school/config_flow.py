@@ -22,6 +22,11 @@ from homeassistant.config_entries import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -37,6 +42,8 @@ from .const import (
     CONF_ACCESS_TOKEN,
     CONF_ACTIVE_HOURS_ONLY,
     CONF_ACTIVE_WINDOWS,
+    CONF_LEAD_MINUTES,
+    CONF_TRAVEL_SENSOR,
     CONF_DEVICE_TOKEN,
     CONF_LOCALE,
     CONF_LOGIN,
@@ -44,6 +51,7 @@ from .const import (
     CONF_SCHOOL_CODE,
     CONF_TENANT_ID,
     DEFAULT_ACTIVE_WINDOWS,
+    DEFAULT_LEAD_MINUTES,
     DEFAULT_LOCALE,
     DOMAIN,
     normalise_school_code,
@@ -274,10 +282,26 @@ class TogetherSchoolOptionsFlow(OptionsFlow):
             current = windows_text
             current_only = user_input[CONF_ACTIVE_HOURS_ONLY]
 
+        lead = entry.options.get(CONF_LEAD_MINUTES, DEFAULT_LEAD_MINUTES)
+        travel = entry.options.get(CONF_TRAVEL_SENSOR)
+        if user_input is not None:
+            lead = user_input.get(CONF_LEAD_MINUTES, lead)
+            travel = user_input.get(CONF_TRAVEL_SENSOR, travel)
         schema = vol.Schema(
             {
                 vol.Required(CONF_ACTIVE_HOURS_ONLY, default=current_only): bool,
                 vol.Required(CONF_ACTIVE_WINDOWS, default=current): str,
+                vol.Required(CONF_LEAD_MINUTES, default=lead): NumberSelector(
+                    NumberSelectorConfig(min=1, max=30, step=1,
+                                         mode=NumberSelectorMode.BOX,
+                                         unit_of_measurement="min")
+                ),
+                # Optional: without it the forecast uses the bus's own
+                # movement, so no other integration is required.
+                vol.Optional(
+                    CONF_TRAVEL_SENSOR,
+                    description={"suggested_value": travel},
+                ): EntitySelector(EntitySelectorConfig(domain="sensor")),
             }
         )
         return self.async_show_form(
