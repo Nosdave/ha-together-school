@@ -313,10 +313,14 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         direction = route.get("direction")
         state = route_state(route)
         run_id = str(route.get("activeRouteId") or route.get("startTime") or "")
-        # Once the child is aboard (outbound) or off (homebound), the question
-        # "when does the bus reach our stop" is answered.
+        # Once the bus has been AT the stop, the question "when does it get
+        # here" is answered - and that is known from the position, not from the
+        # check-in. The check-in is scanned by a supervisor and lags by
+        # minutes; waiting for it leaves the forecast running while the bus
+        # drives away, so the remaining time starts growing again.
         done = (
-            state in ("completed", "missed", "no_service")
+            self._arrived.get(pupil_id) == run_id
+            or state in ("completed", "missed", "no_service")
             or (direction == "WAY_TO" and route.get("checkInTime"))
             or (direction == "WAY_BACK" and route.get("checkOutTime"))
         )

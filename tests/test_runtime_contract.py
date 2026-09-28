@@ -138,5 +138,30 @@ class TestNoReloadLoop(unittest.TestCase):
                       "it must be able to bail out without reloading")
 
 
+class TestForecastEndsAtArrival(unittest.TestCase):
+    """The forecast must stop when the BUS was at the stop, not at check-in.
+
+    The check-in is scanned by a supervisor and lags by minutes. Waiting for it
+    leaves the forecast running while the bus drives away again, so "minutes to
+    our stop" starts growing after it has already been and gone.
+    """
+
+    def setUp(self):
+        self.src = (_PKG / "coordinator.py").read_text()
+
+    def test_done_uses_the_observed_arrival(self):
+        block = self.src[self.src.index("        done = ("):]
+        block = block[: block.index(")\n")]
+        self.assertIn("_arrived", block,
+                      "the observed stop arrival must end the forecast")
+
+    def test_arrival_is_observed_from_position(self):
+        observe = self.src[self.src.index("def _observe_stop_arrival"):]
+        observe = observe[: observe.index("def _travel_minutes")]
+        self.assertIn("distance_m", observe)
+        self.assertNotIn("checkInTime", observe,
+                         "the learned offset must not come from the check-in")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
