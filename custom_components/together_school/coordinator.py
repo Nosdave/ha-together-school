@@ -74,6 +74,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         lead_minutes: int = 5,
         travel_sensor: str | None = None,
         stop_offsets: dict[str, list[float]] | None = None,
+        arrived_runs: dict[str, str] | None = None,
         on_offsets_learned: Any = None,
     ) -> None:
         super().__init__(
@@ -99,8 +100,11 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.options_snapshot: dict[str, Any] | None = None
         # Recent position fixes per pupil, for speed and live arrival.
         self._trail: dict[str, list[tuple[Any, float, float]]] = {}
-        # Which run we have already recorded a stop arrival for.
-        self._arrived: dict[str, str] = {}
+        # Which run we have already recorded a stop arrival for. Persisted:
+        # a restart in the gap between the bus passing and the supervisor's
+        # scan would otherwise resume the forecast and could fire the
+        # "arriving soon" trigger a second time - calling a lift twice.
+        self._arrived: dict[str, str] = dict(arrived_runs or {})
         # Learned timetable->reality offsets in minutes, per direction.
         self.stop_offsets: dict[str, list[float]] = dict(stop_offsets or {})
         self._on_offsets_learned = on_offsets_learned
@@ -269,6 +273,8 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                else route_departure(route))
         self._arrived[pupil_id] = run_id
         if due is None:
+            if self._on_offsets_learned:
+                self._on_offsets_learned(self.stop_offsets, self._arrived)
             return
         offset = (now - due).total_seconds() / 60.0
         if abs(offset) > 45:
@@ -280,7 +286,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         del values[:-LEARNED_KEEP]
         _LOGGER.debug("Learned stop offset %s %+.1f min", direction, offset)
         if self._on_offsets_learned:
-            self._on_offsets_learned(self.stop_offsets)
+            self._on_offsets_learned(self.stop_offsets, self._arrived)
 
     def _travel_minutes(self) -> float | None:
         """Minutes to the stop from the user's own travel-time sensor, if any."""

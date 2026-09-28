@@ -21,6 +21,7 @@ from .const import (
     CONF_LEAD_MINUTES,
     CONF_SCHOOL_CODE,
     CONF_SCHOOL_LATLON,
+    CONF_ARRIVED_RUNS,
     CONF_STOP_OFFSETS,
     CONF_TRAVEL_SENSOR,
     CONF_STATION_LATLON,
@@ -74,12 +75,17 @@ async def async_setup_entry(
             return float(value[0]), float(value[1])
         return None
 
-    def _remember_offsets(offsets) -> None:
-        """Persist what we have learned, so a restart keeps the calibration."""
-        if entry.data.get(CONF_STOP_OFFSETS) != offsets:
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, CONF_STOP_OFFSETS: dict(offsets)}
-            )
+    def _remember_offsets(offsets, arrived) -> None:
+        """Persist the calibration and which runs are already done.
+
+        The second part matters as much as the first: without it a restart
+        between the bus passing and the supervisor scanning could fire the
+        "arriving soon" trigger again.
+        """
+        data = {**entry.data, CONF_STOP_OFFSETS: dict(offsets),
+                CONF_ARRIVED_RUNS: dict(arrived)}
+        if data != entry.data:
+            hass.config_entries.async_update_entry(entry, data=data)
 
     def _remember_places(station, school) -> None:
         """Persist the fixed places so a restart keeps them on the map."""
@@ -104,6 +110,7 @@ async def async_setup_entry(
                                            DEFAULT_LEAD_MINUTES)),
         travel_sensor=entry.options.get(CONF_TRAVEL_SENSOR) or None,
         stop_offsets=entry.data.get(CONF_STOP_OFFSETS) or {},
+        arrived_runs=entry.data.get(CONF_ARRIVED_RUNS) or {},
         on_offsets_learned=_remember_offsets,
     )
     try:

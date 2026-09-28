@@ -80,6 +80,10 @@ CONF_TRAVEL_SENSOR = "travel_time_sensor"
 # that is scanned by a person and lags the bus by minutes.
 CONF_STOP_OFFSETS = "stop_offsets"
 
+# Runs whose stop arrival has already been recorded, so a restart cannot
+# replay the "arriving soon" trigger.
+CONF_ARRIVED_RUNS = "arrived_runs"
+
 
 def normalise_school_code(value) -> str:
     """Reduce whatever the user pasted to a bare subdomain label.
