@@ -27,12 +27,14 @@ from .util import (
     STATE_ON_BOARD,
     STATE_ON_ROUTE,
     STOP_RADIUS_M,
+    bus_fix,
     bus_routes,
     distance_m,
     eta_from_position,
     extract_latlon,
     extract_pupils,
     median,
+    parse_dt,
     pick_id,
     route_arrival,
     route_departure,
@@ -100,6 +102,10 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.options_snapshot: dict[str, Any] | None = None
         # Recent position fixes per pupil, for speed and live arrival.
         self._trail: dict[str, list[tuple[Any, float, float]]] = {}
+        # Recent live forecasts per pupil, for smoothing.
+        self._eta_history: dict[str, list[tuple[str, Any, Any]]] = {}
+        # Last usable live forecast, to ride out brief gaps.
+        self._last_live: dict[str, tuple[str, Any, Any]] = {}
         # Which run we have already recorded a stop arrival for. Persisted:
         # a restart in the gap between the bus passing and the supervisor's
         # scan would otherwise resume the forecast and could fire the
@@ -252,9 +258,17 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         position = self._bus_position(entry)
         if position is None:
             return
+        # Use the fix's OWN timestamp and skip repeats: the backend refreshes
+        # roughly every 30 s while we poll every 15, so half of the samples
+        # would be the same position again. Counted as movement-in-15-seconds
+        # they halve the apparent speed, and the next real fix doubles it back
+        # - which swung the forecast by ten minutes between two polls.
+        fix_time = parse_dt((bus_fix(entry.get("delivery")) or {}).get("last_located")) or now
         trail = self._trail.setdefault(pupil_id, [])
-        trail.append((now, position[0], position[1]))
-        del trail[:-6]
+        if trail and trail[-1][0] == fix_time:
+            return
+        trail.append((fix_time, position[0], position[1]))
+        del trail[:-8]
 
         if self.station is None:
             return
@@ -287,6 +301,26 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Learned stop offset %s %+.1f min", direction, offset)
         if self._on_offsets_learned:
             self._on_offsets_learned(self.stop_offsets, self._arrived)
+
+    def _smooth(self, pupil_id: str, run_id: str, eta: dt.datetime,
+                now: dt.datetime) -> dt.datetime:
+        """Median of the recent live forecasts.
+
+        A single slow stretch - a red light, a turn - drags the measured speed
+        down and balloons the raw estimate. Taking the median of the last few
+        keeps a genuine change tracking while a one-off spike cannot move the
+        number a lift is waiting on.
+        """
+        history = self._eta_history.setdefault(pupil_id, [])
+        if history and history[0][0] != run_id:
+            history.clear()
+        history.append((run_id, now, eta))
+        # Drop anything older than a few minutes: stale guesses should not
+        # hold back a forecast that has genuinely moved.
+        cutoff = now - dt.timedelta(minutes=3)
+        history[:] = [h for h in history if h[1] >= cutoff][-5:]
+        stamps = [h[2].timestamp() for h in history]
+        return dt.datetime.fromtimestamp(median(stamps), tz=eta.tzinfo)
 
     def _travel_minutes(self) -> float | None:
         """Minutes to the stop from the user's own travel-time sensor, if any."""
@@ -344,6 +378,19 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             eta = eta_from_position(self._trail.get(pupil_id), self.station, now)
             if eta is not None:
                 source = SOURCE_LIVE
+
+        if eta is not None and source == SOURCE_LIVE:
+            eta = self._smooth(pupil_id, run_id, eta, now)
+            self._last_live[pupil_id] = (run_id, now, eta)
+        elif live:
+            # The bus is on the move but momentarily gives no usable speed - at
+            # a light, or between fixes. Falling back to the timetable here
+            # swings the forecast by minutes and can fire the trigger far too
+            # early; the most recent live figure is the better answer.
+            previous = self._last_live.get(pupil_id)
+            if previous and previous[0] == run_id and \
+                    (now - previous[1]) <= dt.timedelta(minutes=5):
+                eta, source = previous[2], SOURCE_LIVE
 
         if eta is None:
             due = (route_arrival(route) if direction == "WAY_BACK"

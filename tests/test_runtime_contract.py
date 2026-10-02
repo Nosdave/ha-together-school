@@ -163,5 +163,35 @@ class TestForecastEndsAtArrival(unittest.TestCase):
                          "the learned offset must not come from the check-in")
 
 
+class TestForecastStability(unittest.TestCase):
+    """A forecast a lift waits on must not swing by minutes between polls.
+
+    Observed live: 16:26 -> 16:36 -> back to the timetable value 16:18 within
+    ninety seconds, which fired the trigger about twelve minutes early.
+    """
+
+    def setUp(self):
+        self.src = (_PKG / "coordinator.py").read_text()
+
+    def test_duplicate_fixes_are_skipped(self):
+        """The backend refreshes slower than we poll; repeats halve the speed."""
+        observe = self.src[self.src.index("def _observe_stop_arrival"):]
+        self.assertIn("last_located", observe,
+                      "fixes must carry the backend's own timestamp")
+        self.assertIn("trail[-1][0] == fix_time", observe,
+                      "a repeated fix must not be recorded as movement")
+
+    def test_live_forecast_is_smoothed(self):
+        self.assertIn("_smooth", self.src)
+        smooth = self.src[self.src.index("def _smooth"):]
+        self.assertIn("median", smooth)
+
+    def test_brief_live_gap_does_not_fall_back_to_the_timetable(self):
+        forecast = self.src[self.src.index("def _forecast"):]
+        self.assertIn("_last_live", forecast,
+                      "a momentary loss of speed must reuse the last live "
+                      "figure rather than jumping to the timetable")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
