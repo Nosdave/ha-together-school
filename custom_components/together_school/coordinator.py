@@ -16,7 +16,6 @@ from .const import (
     DEFAULT_ACTIVE_WINDOWS,
     DOMAIN,
     SCAN_INTERVAL,
-    SCAN_INTERVAL_IDLE,
     SCAN_INTERVAL_LIVE,
 )
 from .util import (
@@ -372,7 +371,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         a live figure before doing something irreversible.
         """
         route = select_route(bus_routes(entry.get("agenda")))
-        blank = {"eta": None, "source": None, "minutes": None, "direction": None,
+        blank = {"eta": None, "source": None, "direction": None,
                  "run_id": None, "done": True}
         if not route:
             return blank
@@ -427,9 +426,9 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 eta = due + dt.timedelta(minutes=offset)
                 source = SOURCE_LEARNED if offset else SOURCE_TIMETABLE
 
-        minutes = None
-        if eta is not None:
-            minutes = max(0, round((eta - now).total_seconds() / 60))
-        return {"eta": eta, "source": source, "minutes": minutes,
+        # No minutes figure here on purpose: outside the commute windows this
+        # payload is kept rather than refreshed, so a countdown stored in it
+        # would freeze with it. The entities derive it from `eta` when read.
+        return {"eta": eta, "source": source,
                 "direction": direction, "run_id": run_id, "done": False,
                 "samples": len(self.stop_offsets.get(direction or "", []))}

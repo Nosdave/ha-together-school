@@ -10,6 +10,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
@@ -17,6 +18,7 @@ from .util import (
     SOURCE_LIVE,
     STATE_MISSED,
     is_on_bus,
+    minutes_until,
     route_checkin,
     route_checkout,
     route_missed,
@@ -111,7 +113,7 @@ class ArrivingSoonBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
             return False
         if self._latched_run == run_id:
             return True
-        minutes = forecast.get("minutes")
+        minutes = minutes_until(forecast.get("eta"), dt_util.now())
         if minutes is not None and minutes <= self.coordinator.lead_minutes:
             self._latched_run = run_id
             return True
@@ -122,7 +124,7 @@ class ArrivingSoonBinarySensor(TogetherSchoolEntity, BinarySensorEntity):
         forecast = self._pupil.get("forecast") or {}
         return {
             "lead_minutes": self.coordinator.lead_minutes,
-            "minutes_to_stop": forecast.get("minutes"),
+            "minutes_to_stop": minutes_until(forecast.get("eta"), dt_util.now()),
             "source": forecast.get("source"),
             "is_live": forecast.get("source") == SOURCE_LIVE,
         }

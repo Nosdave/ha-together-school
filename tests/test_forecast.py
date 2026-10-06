@@ -182,5 +182,34 @@ class TestStopServedThroughAGap(unittest.TestCase):
         self.assertFalse(_u.stop_was_served(359, None))
 
 
+class TestMinutesUntil(unittest.TestCase):
+    """The countdown an ESP32 display and a voice answer read.
+
+    It must be derived from the timestamp at the moment it is read. Taken
+    from the coordinator's snapshot it froze whenever polling paused: on one
+    Friday it sat at 454 minutes from 08:45 until 14:45, while the timestamp
+    beside it was right the whole time.
+    """
+
+    def test_counts_down_as_time_passes(self):
+        eta = T0 + dt.timedelta(minutes=30)
+        self.assertEqual(_u.minutes_until(eta, T0), 30)
+        self.assertEqual(_u.minutes_until(eta, T0 + dt.timedelta(minutes=25)), 5)
+
+    def test_never_goes_negative(self):
+        """A bus that is already past reads zero, not minus four."""
+        eta = T0 - dt.timedelta(minutes=4)
+        self.assertEqual(_u.minutes_until(eta, T0), 0)
+
+    def test_hours_ahead_is_still_a_number(self):
+        """Asked at breakfast about the afternoon run, it must answer."""
+        eta = T0 + dt.timedelta(hours=8)
+        self.assertEqual(_u.minutes_until(eta, T0), 480)
+
+    def test_no_forecast_is_none(self):
+        self.assertIsNone(_u.minutes_until(None, T0))
+        self.assertIsNone(_u.minutes_until(T0, None))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

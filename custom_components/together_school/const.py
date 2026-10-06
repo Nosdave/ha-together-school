@@ -52,7 +52,6 @@ DEFAULT_LOCALE = "en"
 # keeps the load off the school's backend.
 SCAN_INTERVAL_LIVE = timedelta(seconds=15)
 SCAN_INTERVAL = timedelta(seconds=60)
-SCAN_INTERVAL_IDLE = timedelta(minutes=5)
 
 # Remembered coordinates of the fixed places, so the map still shows the stop
 # and the school when no run is active (the API only sends them during a run).

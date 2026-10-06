@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
@@ -22,6 +23,7 @@ from .util import (
     STATE_ON_BOARD,
     STATE_ON_ROUTE,
     STATE_SCHEDULED,
+    minutes_until,
     route_arrival,
     route_checkin,
     route_checkout,
@@ -233,7 +235,15 @@ class StopEtaSensor(TogetherSchoolEntity, SensorEntity):
 
 
 class MinutesToStopSensor(TogetherSchoolEntity, SensorEntity):
-    """Whole minutes until the bus reaches the stop."""
+    """Whole minutes until the bus reaches the stop.
+
+    Counted here from the forecast timestamp rather than taken from the
+    coordinator's snapshot. Outside the commute windows the coordinator keeps
+    its last payload instead of polling, so a figure computed there would
+    freeze: on one quiet afternoon it sat at 454 minutes from a quarter to
+    nine until a quarter to three. The timestamp stays true all day, and a
+    display or a voice answer can be asked at any hour.
+    """
 
     _attr_translation_key = "minutes_to_stop"
     _attr_icon = "mdi:timer-outline"
@@ -245,4 +255,5 @@ class MinutesToStopSensor(TogetherSchoolEntity, SensorEntity):
 
     @property
     def native_value(self) -> int | None:
-        return (self._pupil.get("forecast") or {}).get("minutes")
+        eta = (self._pupil.get("forecast") or {}).get("eta")
+        return minutes_until(eta, dt_util.now())

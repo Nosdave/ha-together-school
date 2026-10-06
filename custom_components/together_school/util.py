@@ -551,6 +551,19 @@ def speed_kmh(fixes: Any) -> float | None:
     return kmh
 
 
+def minutes_until(eta: Any, now: Any) -> int | None:
+    """Whole minutes from now until ``eta``, never negative.
+
+    Lives here so the countdown sensor and the trigger cannot drift apart, and
+    so both are derived from the timestamp at the moment they are read. The
+    coordinator stops polling outside the commute windows and keeps its last
+    payload; a figure stored in that payload would freeze with it.
+    """
+    if eta is None or now is None:
+        return None
+    return max(0, round((eta - now).total_seconds() / 60))
+
+
 def stop_was_served(closest_m: Any, current_m: Any) -> bool:
     """Has the bus been at the stop and left again?
 

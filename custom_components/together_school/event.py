@@ -12,10 +12,11 @@ from typing import Any
 from homeassistant.components.event import EventEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import TogetherSchoolConfigEntry
 from .entity import TogetherSchoolEntity
-from .util import bus_routes, route_state, select_route
+from .util import bus_routes, minutes_until, route_state, select_route
 
 EVENT_APPROACHING = "approaching"
 EVENT_CHECKED_IN = "checked_in"
@@ -67,15 +68,18 @@ class BusEvent(TogetherSchoolEntity, EventEntity):
             del self._fired[old]
 
         state = route_state(route)
+        # Derived from the timestamp here too, so the event, the countdown
+        # sensor and the trigger can never report different minutes.
+        minutes = minutes_until(forecast.get("eta"), dt_util.now())
         for name, happened, extra in (
             (EVENT_MISSED, state == "missed", {}),
             (EVENT_CHECKED_OUT, bool((route or {}).get("checkOutTime")), {}),
             (EVENT_CHECKED_IN, bool((route or {}).get("checkInTime")), {}),
             (EVENT_APPROACHING,
-             forecast.get("minutes") is not None
-             and forecast.get("minutes") <= self.coordinator.lead_minutes
+             minutes is not None
+             and minutes <= self.coordinator.lead_minutes
              and not forecast.get("done"),
-             {"minutes_to_stop": forecast.get("minutes"),
+             {"minutes_to_stop": minutes,
               "source": forecast.get("source")}),
         ):
             if happened and name not in seen:

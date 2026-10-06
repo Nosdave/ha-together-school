@@ -193,5 +193,35 @@ class TestForecastStability(unittest.TestCase):
                       "figure rather than jumping to the timetable")
 
 
+class TestCountdownIsDerivedWhenRead(unittest.TestCase):
+    """The countdown must never be served from the coordinator's snapshot.
+
+    Outside the commute windows the coordinator keeps its last payload rather
+    than polling, so a minutes figure stored in it stops moving: measured on a
+    Friday, it stood at 454 from 08:45 until 14:45 while the timestamp beside
+    it was correct throughout. An ESP32 display or a voice answer can be asked
+    at any hour, so all three readers compute it from `eta` on read.
+    """
+
+    READERS = ("sensor.py", "binary_sensor.py", "event.py")
+
+    def test_no_reader_takes_a_stored_minutes_value(self):
+        for name in self.READERS:
+            with self.subTest(module=name):
+                self.assertNotIn(
+                    'get("minutes")', (_PKG / name).read_text(),
+                    "read the timestamp and derive, or it freezes with the "
+                    "poll loop",
+                )
+
+    def test_every_reader_derives_from_the_timestamp(self):
+        for name in self.READERS:
+            with self.subTest(module=name):
+                self.assertIn("minutes_until(", (_PKG / name).read_text())
+
+    def test_the_coordinator_stores_no_countdown(self):
+        self.assertNotIn('"minutes":', (_PKG / "coordinator.py").read_text())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

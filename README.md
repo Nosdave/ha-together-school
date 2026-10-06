@@ -26,7 +26,7 @@ One device per child, discovered automatically from your parent account:
 | `sensor.…_scheduled_departure` | timestamp of the pickup |
 | `sensor.…_scheduled_arrival` | timestamp of the arrival |
 | `sensor.…_bus_at_our_stop` | **when the bus reaches your own stop** - live while it is moving, otherwise the timetable plus what has been learned; `source` says which |
-| `sensor.…_minutes_to_our_stop` | the same as a countdown |
+| `sensor.…_minutes_to_our_stop` | the same as a countdown, derived when read - so it keeps ticking between commute windows, for a display or a voice answer asked at any hour |
 | `binary_sensor.…_arriving_soon` | **the automation trigger** - latches for the run so a lift is not called three times |
 | `event.…_bus_event` | `approaching` / `checked_in` / `checked_out` / `missed`, each fired once per run |
 
