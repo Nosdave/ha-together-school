@@ -40,6 +40,7 @@ from .util import (
     route_departure,
     route_state,
     select_route,
+    stop_was_served,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -111,6 +112,10 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # scan would otherwise resume the forecast and could fire the
         # "arriving soon" trigger a second time - calling a lift twice.
         self._arrived: dict[str, str] = dict(arrived_runs or {})
+        # Closest the bus has come to the stop on the current run, so an
+        # arrival is still recognised when the position feed goes quiet across
+        # it. Per run, in memory only: it is worthless once the run is over.
+        self._closest: dict[str, tuple[str, float]] = {}
         # Learned timetable->reality offsets in minutes, per direction.
         self.stop_offsets: dict[str, list[float]] = dict(stop_offsets or {})
         self._on_offsets_learned = on_offsets_learned
@@ -278,7 +283,29 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         run_id = str(route.get("activeRouteId") or route.get("startTime") or "")
         if not run_id or self._arrived.get(pupil_id) == run_id:
             return
-        if (distance_m(position, self.station) or 1e9) > STOP_RADIUS_M:
+
+        here = distance_m(position, self.station)
+        seen = self._closest.get(pupil_id)
+        if seen is None or seen[0] != run_id:
+            self._closest[pupil_id] = (run_id, here if here is not None else 1e9)
+        elif here is not None and here < seen[1]:
+            self._closest[pupil_id] = (run_id, here)
+        closest = self._closest[pupil_id][1]
+
+        if (here or 1e9) > STOP_RADIUS_M:
+            # No fix landed at the stop - but the feed drops out for minutes at
+            # a time, sometimes exactly while the bus is there. Coming close
+            # and then drawing away again is proof enough that it has been.
+            if stop_was_served(closest, here):
+                _LOGGER.debug(
+                    "Stop served during a gap in the feed (closest %.0f m, now %.0f m)",
+                    closest, here,
+                )
+                self._arrived[pupil_id] = run_id
+                if self._on_offsets_learned:
+                    # End the forecast, but learn nothing: the moment it
+                    # actually arrived is inside the gap and unknown.
+                    self._on_offsets_learned(self.stop_offsets, self._arrived)
             return
 
         # The timetable moment this stop was due: the departure on the way out,

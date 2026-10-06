@@ -59,9 +59,19 @@ class TestMedian(unittest.TestCase):
 
 class TestSpeed(unittest.TestCase):
     def test_typical_city_speed(self):
-        # ~250 m in 30 s = 30 km/h
-        fixes = _fixes((0, 1.08, 2.05), (30, 1.09, 2.05))
+        # ~250 m per 30 s = 30 km/h, held over two steps.
+        fixes = _fixes((0, 1.08, 2.05), (30, 1.09, 2.05),
+                       (60, 1.10, 2.05))
         self.assertAlmostEqual(_u.speed_kmh(fixes), 30, delta=3)
+
+    def test_one_hop_is_too_thin_to_believe(self):
+        """Fifteen seconds of movement is not a speed.
+
+        Taken alone it put the first live forecast of the morning out by ten
+        minutes; the bus has usually just pulled away and is still crawling.
+        """
+        fixes = _fixes((0, 1.08, 2.05), (30, 1.09, 2.05))
+        self.assertIsNone(_u.speed_kmh(fixes))
 
     def test_standing_bus_returns_none(self):
         """A stationary bus must not yield a speed to divide by."""
@@ -78,12 +88,13 @@ class TestSpeed(unittest.TestCase):
 
 
 class TestEtaFromPosition(unittest.TestCase):
-    NOW = T0 + dt.timedelta(seconds=30)
+    NOW = T0 + dt.timedelta(seconds=60)
 
     def test_moving_towards_the_stop(self):
         # ~650 m still to go at 30 km/h -> a couple of minutes once the road
         # factor is applied.
-        fixes = _fixes((0, 1.05, 2.08), (30, 1.06, 2.08))
+        fixes = _fixes((0, 1.04, 2.08), (30, 1.05, 2.08),
+                       (60, 1.06, 2.08))
         eta = _u.eta_from_position(fixes, STOP, self.NOW)
         self.assertIsNotNone(eta)
         minutes = (eta - self.NOW).total_seconds() / 60
@@ -101,6 +112,74 @@ class TestEtaFromPosition(unittest.TestCase):
     def test_no_stop_known(self):
         fixes = _fixes((0, 1.08, 2.08), (30, 1.09, 2.08))
         self.assertIsNone(_u.eta_from_position(fixes, None, self.NOW))
+
+
+class TestLeadingStandstill(unittest.TestCase):
+    """The bus waits at the start of its line before it sets off.
+
+    Averaging that wait together with the first metres of driving gave 3.5
+    km/h - just above the standing threshold, so it was believed - and the
+    forecast jumped to twenty minutes out before collapsing back over the next
+    ninety seconds. Reproduced from the run of 6 October.
+    """
+
+    def _pulling_away(self):
+        # Parked at the line start, then two 98 m hops as it pulls away.
+        points = [(s, 1.18, 2.03) for s in range(0, 91, 15)]
+        points += [(105, 1.20, 2.03), (120, 1.21, 2.03)]
+        return _fixes(*points)
+
+    def test_standstill_is_not_averaged_into_the_speed(self):
+        kmh = _u.speed_kmh(self._pulling_away())
+        self.assertIsNotNone(kmh)
+        # 98 m in 15 s is roughly 23 km/h; the mixed window gave 3.5.
+        self.assertGreater(kmh, 15, kmh)
+
+    def test_forecast_does_not_balloon_when_the_bus_sets_off(self):
+        fixes = self._pulling_away()
+        now = fixes[-1][0]
+        eta = _u.eta_from_position(fixes, STOP, now)
+        self.assertIsNotNone(eta)
+        minutes = (eta - now).total_seconds() / 60
+        # The observed value was 19.5 minutes; the bus was there in about 4.
+        self.assertLess(minutes, 8, minutes)
+
+    def test_the_very_first_hop_still_promises_nothing(self):
+        """Wait for a second hop rather than publish a wild first guess."""
+        points = [(s, 1.18, 2.03) for s in range(0, 106, 15)]
+        points.append((120, 1.20, 2.03))
+        self.assertIsNone(_u.speed_kmh(_fixes(*points)))
+
+    def test_a_bus_that_only_stands_still_still_promises_nothing(self):
+        fixes = _fixes(*[(s, 1.18, 2.03) for s in range(0, 120, 15)])
+        self.assertIsNone(_u.speed_kmh(fixes))
+
+
+class TestStopServedThroughAGap(unittest.TestCase):
+    """The feed went quiet for 3 min 20 s exactly across the stop.
+
+    Last fix before the gap 495 m out, first after it 368 m, closest ever
+    359 m - never inside the 60 m that counts as arrived. The forecast kept
+    running while the bus drove off, so the remaining minutes grew again
+    instead of reaching zero.
+    """
+
+    def test_close_then_drawing_away_counts_as_served(self):
+        self.assertTrue(_u.stop_was_served(359, 700))
+
+    def test_still_approaching_does_not(self):
+        self.assertFalse(_u.stop_was_served(495, 495))
+
+    def test_a_small_wobble_does_not(self):
+        self.assertFalse(_u.stop_was_served(359, 480))
+
+    def test_a_bus_that_never_came_near_does_not(self):
+        """Passing a kilometre away is another line, not our stop."""
+        self.assertFalse(_u.stop_was_served(1662, 2200))
+
+    def test_unknown_distances_do_not(self):
+        self.assertFalse(_u.stop_was_served(None, 700))
+        self.assertFalse(_u.stop_was_served(359, None))
 
 
 if __name__ == "__main__":

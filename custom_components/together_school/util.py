@@ -455,6 +455,21 @@ MAX_SPEED_KMH = 90.0        # above this, assume a bad fix
 ROAD_FACTOR = 1.35          # straight line -> road distance, rough but stable
 LEARNED_KEEP = 12           # how many past runs feed the median
 
+# A bus can serve the stop while the backend sends nothing: the feed goes
+# quiet for minutes at a time. If it came this close and is now this much
+# further away again, it has been and gone - even though no fix ever landed
+# inside STOP_RADIUS_M.
+NEAR_RADIUS_M = 500
+RECEDE_MARGIN_M = 300
+
+# How much driving must be on record before a live forecast is worth
+# publishing. A single fifteen-second hop is far too thin a basis: measured
+# over four mornings, the first live figure derived from one hop was out by
+# 9.6 minutes on average, against 0.5 once two hops are required. Two also
+# rejects a single huge jump across a gap in the feed, which is not a speed.
+MIN_MOVING_STEPS = 2
+MIN_MOVING_M = 150
+
 SOURCE_LIVE = "live"
 SOURCE_LEARNED = "timetable+learned"
 SOURCE_TIMETABLE = "timetable"
@@ -492,11 +507,18 @@ def speed_kmh(fixes: Any) -> float | None:
     ``fixes`` is a sequence of ``(timestamp, lat, lon)`` oldest-first. Returns
     None when the bus is standing or the fixes are implausible, so the caller
     can fall back rather than extrapolate nonsense.
+
+    Only the stretch the bus has been *moving* for counts. A school bus waits
+    several minutes at the start of its line, and averaging that standstill
+    together with the first metres of driving yields walking pace: the moment
+    it pulls away, the estimate balloons to twenty minutes and then collapses
+    again as the standstill ages out of the window. Measured on a real run:
+    3.5 km/h over the mixed window against 23 km/h over the moving part.
     """
     if not fixes or len(fixes) < 2:
         return None
-    total_m = 0.0
-    total_s = 0.0
+
+    steps = []
     for (t0, la0, lo0), (t1, la1, lo1) in zip(fixes, fixes[1:]):
         seconds = (t1 - t0).total_seconds()
         if seconds <= 0:
@@ -504,14 +526,50 @@ def speed_kmh(fixes: Any) -> float | None:
         step = distance_m((la0, lo0), (la1, lo1))
         if step is None:
             continue
-        total_m += step
-        total_s += seconds
-    if total_s <= 0:
+        steps.append((step, seconds))
+    if not steps:
+        return None
+
+    # Keep the longest run of moving steps at the end. A step that is itself
+    # below walking pace is the bus standing - at the line start, or at a
+    # light - and everything before it is older news still.
+    moving = []
+    for step, seconds in reversed(steps):
+        if (step / seconds) * 3.6 < MIN_SPEED_KMH:
+            break
+        moving.append((step, seconds))
+    if len(moving) < MIN_MOVING_STEPS:
+        return None
+
+    total_m = sum(s for s, _ in moving)
+    total_s = sum(sec for _, sec in moving)
+    if total_s <= 0 or total_m < MIN_MOVING_M:
         return None
     kmh = (total_m / total_s) * 3.6
     if kmh < MIN_SPEED_KMH or kmh > MAX_SPEED_KMH:
         return None
     return kmh
+
+
+def stop_was_served(closest_m: Any, current_m: Any) -> bool:
+    """Has the bus been at the stop and left again?
+
+    The backend's position feed drops out for minutes at a time, and it can
+    drop out exactly across the stop: on one run the last fix before the gap
+    was 495 m away, the first after it 368 m, and the bus never appeared
+    within the 60 m that counts as "arrived". Without this the forecast keeps
+    running while the bus drives off, and the remaining time grows again
+    instead of reaching zero.
+
+    Deliberately only answers *whether*, not *when*: the exact moment is
+    inside the gap and unknown, so a run recognised this way must not feed the
+    learned offset.
+    """
+    if closest_m is None or current_m is None:
+        return False
+    if closest_m > NEAR_RADIUS_M:
+        return False
+    return (current_m - closest_m) >= RECEDE_MARGIN_M
 
 
 def eta_from_position(fixes: Any, stop: Any, now: Any) -> Any:
