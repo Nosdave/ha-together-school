@@ -475,6 +475,45 @@ MIN_MOVING_M = 150
 MOVED_AWAY_M = 50
 
 
+# --- the line's own stops --------------------------------------------------
+#
+# A bus standing still is not necessarily at a stop: it could be at a light or
+# in traffic. Measured over seven mornings, what separates the two is not
+# geometry - the positional scatter at the known stop (19 m) is the same as at
+# the suspected lights (14-20 m), because GPS noise swamps the difference
+# between a kerb and a queue. What separates them is how OFTEN: the two real
+# stops were served on 7 and 6 of 7 runs, the traffic halts on 2 and 3.
+
+ROUTE_PLACE_M = 45      # the same spot, seen again on another run
+STILL_M = 25            # inside this, the bus counts as standing
+MIN_DWELL_S = 20        # shorter than this is traffic, not a stop
+STOP_MIN_RUNS = 3       # never call a place a stop on one sighting
+STOP_MIN_SHARE = 0.7    # ...and only if most runs actually stopped there
+
+
+def is_served_stop(seen: Any, runs: Any) -> bool:
+    """Does this place look like a stop the line serves, or just traffic?"""
+    try:
+        seen, runs = int(seen), int(runs)
+    except (TypeError, ValueError):
+        return False
+    if runs <= 0 or seen < STOP_MIN_RUNS:
+        return False
+    return (seen / runs) >= STOP_MIN_SHARE
+
+
+def find_place(places: Any, position: Any, radius: float = ROUTE_PLACE_M) -> Any:
+    """Index of the remembered place at this position, or None for a new one."""
+    if not places or not position:
+        return None
+    best, best_d = None, radius
+    for i, place in enumerate(places):
+        d = distance_m((place.get("lat"), place.get("lon")), position)
+        if d is not None and d <= best_d:
+            best, best_d = i, d
+    return best
+
+
 def earliest(*candidates: Any) -> Any:
     """The earliest of the forecasts on offer, ignoring the missing ones.
 

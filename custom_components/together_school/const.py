@@ -86,6 +86,12 @@ CONF_STOP_OFFSETS = "stop_offsets"
 # was at worst 18 seconds optimistic, against 92 for the speed estimate.
 CONF_TRAVEL_MINUTES = "travel_minutes"
 
+# The places the line actually stops at, counted across runs. Learned
+# here rather than read from the recorder: a return run happens twice a
+# week and the recorder keeps about ten days, which is never enough
+# samples at once to tell a stop from a traffic light.
+CONF_ROUTE_STOPS = "route_stops"
+
 # Runs whose stop arrival has already been recorded, so a restart cannot
 # replay the "arriving soon" trigger.
 CONF_ARRIVED_RUNS = "arrived_runs"

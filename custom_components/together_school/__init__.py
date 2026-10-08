@@ -23,6 +23,7 @@ from .const import (
     CONF_SCHOOL_LATLON,
     CONF_ARRIVED_RUNS,
     CONF_STOP_OFFSETS,
+    CONF_ROUTE_STOPS,
     CONF_TRAVEL_MINUTES,
     CONF_TRAVEL_SENSOR,
     CONF_STATION_LATLON,
@@ -76,7 +77,7 @@ async def async_setup_entry(
             return float(value[0]), float(value[1])
         return None
 
-    def _remember_offsets(offsets, arrived, travel=None) -> None:
+    def _remember_offsets(offsets, arrived, travel=None, stops=None) -> None:
         """Persist the calibration and which runs are already done.
 
         The second part matters as much as the first: without it a restart
@@ -85,7 +86,8 @@ async def async_setup_entry(
         """
         data = {**entry.data, CONF_STOP_OFFSETS: dict(offsets),
                 CONF_ARRIVED_RUNS: dict(arrived),
-                CONF_TRAVEL_MINUTES: dict(travel or {})}
+                CONF_TRAVEL_MINUTES: dict(travel or {}),
+                CONF_ROUTE_STOPS: dict(stops or {})}
         if data != entry.data:
             hass.config_entries.async_update_entry(entry, data=data)
 
@@ -113,6 +115,7 @@ async def async_setup_entry(
         travel_sensor=entry.options.get(CONF_TRAVEL_SENSOR) or None,
         stop_offsets=entry.data.get(CONF_STOP_OFFSETS) or {},
         travel_minutes=entry.data.get(CONF_TRAVEL_MINUTES) or {},
+        route_stops=entry.data.get(CONF_ROUTE_STOPS) or {},
         arrived_runs=entry.data.get(CONF_ARRIVED_RUNS) or {},
         on_offsets_learned=_remember_offsets,
     )

@@ -245,6 +245,9 @@ class StopEtaSensor(TogetherSchoolEntity, SensorEntity):
             "bus_appeared": f.get("appeared"),
             "bus_departed": f.get("departed"),
             "typical_run_minutes": f.get("typical_run"),
+            # How much of the line has been worked out so far.
+            "route_runs_seen": f.get("route_runs"),
+            "route_stops_known": f.get("route_stops_known"),
         }.items() if v is not None}
 
 

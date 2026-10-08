@@ -236,5 +236,51 @@ class TestEarliest(unittest.TestCase):
         self.assertIsNone(_u.earliest())
 
 
+class TestTellingStopsFromTrafficLights(unittest.TestCase):
+    """A standing bus is not necessarily at a stop.
+
+    What separates the two is not geometry: measured over seven mornings the
+    positional scatter at the known stop was 19 m and at the suspected lights
+    14-20 m, because GPS noise swamps the difference between a kerb and a
+    queue. What separates them is how often. The two real stops were served
+    on 7 and 6 runs of 7; the traffic halts on 2 and 3.
+    """
+
+    def test_served_on_almost_every_run(self):
+        self.assertTrue(_u.is_served_stop(7, 7))
+        self.assertTrue(_u.is_served_stop(6, 7))
+
+    def test_occasional_halt_is_traffic(self):
+        self.assertFalse(_u.is_served_stop(3, 7))
+        self.assertFalse(_u.is_served_stop(2, 7))
+
+    def test_never_decided_on_too_few_runs(self):
+        """One sighting is a coincidence, not a timetable."""
+        self.assertFalse(_u.is_served_stop(1, 1))
+        self.assertFalse(_u.is_served_stop(2, 2))
+
+    def test_nonsense_input_is_not_a_stop(self):
+        self.assertFalse(_u.is_served_stop(None, 7))
+        self.assertFalse(_u.is_served_stop(3, 0))
+        self.assertFalse(_u.is_served_stop("x", "y"))
+
+
+class TestFindPlace(unittest.TestCase):
+    PLACES = [{"lat": 1.18, "lon": 2.03}, {"lat": 1.12, "lon": 2.08}]
+
+    def test_recognises_the_same_spot_again(self):
+        self.assertEqual(_u.find_place(self.PLACES, (1.19, 2.04)), 0)
+
+    def test_a_different_spot_is_new(self):
+        self.assertIsNone(_u.find_place(self.PLACES, (1.02, 2.01)))
+
+    def test_picks_the_nearest_when_two_are_close(self):
+        self.assertEqual(_u.find_place(self.PLACES, (1.11, 2.06)), 1)
+
+    def test_nothing_known_yet(self):
+        self.assertIsNone(_u.find_place([], (1.07, 4.35)))
+        self.assertIsNone(_u.find_place(self.PLACES, None))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

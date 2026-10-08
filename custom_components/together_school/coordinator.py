@@ -20,6 +20,7 @@ from .const import (
 )
 from .util import (
     LEARNED_KEEP,
+    MIN_DWELL_S,
     MOVED_AWAY_M,
     SOURCE_LIVE,
     SOURCE_TIMETABLE,
@@ -28,8 +29,11 @@ from .util import (
     STOP_RADIUS_M,
     bus_fix,
     bus_routes,
+    STILL_M,
     distance_m,
     earliest,
+    find_place,
+    is_served_stop,
     eta_from_position,
     extract_latlon,
     extract_pupils,
@@ -78,6 +82,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         travel_sensor: str | None = None,
         stop_offsets: dict[str, list[float]] | None = None,
         travel_minutes: dict[str, list[float]] | None = None,
+        route_stops: dict[str, Any] | None = None,
         arrived_runs: dict[str, str] | None = None,
         on_offsets_learned: Any = None,
     ) -> None:
@@ -128,6 +133,17 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # In memory only - meaningless once the run is over.
         self._run_start: dict[str, tuple[str, tuple[float, float], Any]] = {}
         self._departed: dict[str, tuple[str, Any]] = {}
+        # The places this line actually stops at, learned across runs. Needed
+        # because the recorder only keeps about ten days, and a return run
+        # happens twice a week - too few to tell a stop from a traffic light
+        # until the integration does the counting itself.
+        self.route_stops: dict[str, Any] = dict(route_stops or {})
+        # Standstill being observed right now, and the ones already closed on
+        # this run: (run_id, anchor_position, first_fix, last_fix).
+        self._standing: dict[str, tuple[str, tuple[float, float], Any, Any]] = {}
+        self._halts: dict[str, tuple[str, list[dict[str, Any]]]] = {}
+        # The last confirmed stop the bus has pulled away from, for forecasting.
+        self._left_stop: dict[str, tuple[str, int, Any]] = {}
         self._on_offsets_learned = on_offsets_learned
         self.travel_sensor = travel_sensor
         self.lead_minutes = lead_minutes
@@ -260,6 +276,70 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return extract_latlon(delivery.get("busLocation"))
         return None
 
+    def _track_halts(self, pupil_id: str, run_id: str,
+                     position: tuple[float, float], fix_time: dt.datetime,
+                     direction: str) -> None:
+        """Note where the bus stands still, and when it pulls away again.
+
+        Only the standing is recorded here; whether a place is a stop of the
+        line or a red light is decided later, from how many runs stopped
+        there. Over seven mornings the real stops were served on 6 and 7 of
+        them, the traffic halts on 2 and 3.
+        """
+        halts = self._halts.get(pupil_id)
+        if halts is None or halts[0] != run_id:
+            self._halts[pupil_id] = (run_id, [])
+            self._standing.pop(pupil_id, None)
+            self._left_stop.pop(pupil_id, None)
+
+        standing = self._standing.get(pupil_id)
+        if standing and standing[0] == run_id and \
+                (distance_m(standing[1], position) or 0.0) <= STILL_M:
+            self._standing[pupil_id] = (run_id, standing[1], standing[2], fix_time)
+            return
+
+        if standing and standing[0] == run_id:
+            dwell = (standing[3] - standing[2]).total_seconds()
+            if dwell >= MIN_DWELL_S:
+                self._halts[pupil_id][1].append(
+                    {"pos": standing[1], "dwell": dwell, "left": standing[3]}
+                )
+                # Pulling away from a place the line is known to serve is a
+                # fresh anchor for the forecast, more recent than the start.
+                known = self.route_stops.get(direction) or {}
+                idx = find_place(known.get("places"), standing[1])
+                if idx is not None:
+                    place = known["places"][idx]
+                    if is_served_stop(place.get("seen"), known.get("runs")):
+                        self._left_stop[pupil_id] = (run_id, idx, standing[3])
+        self._standing[pupil_id] = (run_id, position, fix_time, fix_time)
+
+    def _learn_route_stops(self, pupil_id: str, run_id: str, direction: str,
+                           arrived_at: dt.datetime) -> None:
+        """Fold this run's standstills into what is known about the line."""
+        halts = self._halts.get(pupil_id)
+        if not halts or halts[0] != run_id:
+            return
+        known = self.route_stops.setdefault(direction, {"runs": 0, "places": []})
+        known["runs"] = int(known.get("runs") or 0) + 1
+        places = known.setdefault("places", [])
+        for halt in halts[1]:
+            if halt["left"] > arrived_at:
+                continue  # after our stop; no use for predicting our arrival
+            idx = find_place(places, halt["pos"])
+            if idx is None:
+                places.append({"lat": halt["pos"][0], "lon": halt["pos"][1],
+                               "seen": 0, "dwell": [], "to_stop": []})
+                idx = len(places) - 1
+            place = places[idx]
+            place["seen"] = int(place.get("seen") or 0) + 1
+            place["dwell"] = (place.get("dwell") or [])[-LEARNED_KEEP:] + [
+                round(halt["dwell"])]
+            place["to_stop"] = (place.get("to_stop") or [])[-LEARNED_KEEP:] + [
+                round((arrived_at - halt["left"]).total_seconds() / 60.0, 1)]
+        _LOGGER.debug("Route knowledge for %s: %d runs, %d places",
+                      direction, known["runs"], len(places))
+
     def _observe_stop_arrival(
         self, pupil_id: str, entry: dict[str, Any], now: dt.datetime
     ) -> None:
@@ -310,6 +390,9 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._departed[pupil_id] = (run_id, fix_time)
                 _LOGGER.debug("Bus left the start of its line at %s", fix_time)
 
+        self._track_halts(pupil_id, run_id, position, fix_time,
+                          route.get("direction") or "?")
+
         here = distance_m(position, self.station)
         seen = self._closest.get(pupil_id)
         if seen is None or seen[0] != run_id:
@@ -331,7 +414,8 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._on_offsets_learned:
                     # End the forecast, but learn nothing: the moment it
                     # actually arrived is inside the gap and unknown.
-                    self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
+                    self._on_offsets_learned(self.stop_offsets, self._arrived,
+                                             self.travel_minutes, self.route_stops)
             return
 
         # The timetable moment this stop was due: the departure on the way out,
@@ -341,8 +425,12 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._arrived[pupil_id] = run_id
         if due is None:
             if self._on_offsets_learned:
-                self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
+                self._on_offsets_learned(self.stop_offsets, self._arrived,
+                                             self.travel_minutes, self.route_stops)
             return
+        self._learn_route_stops(pupil_id, run_id,
+                                route.get("direction") or "?", now)
+
         gone = self._departed.get(pupil_id)
         if gone and gone[0] == run_id:
             minutes = (now - gone[1]).total_seconds() / 60.0
@@ -363,7 +451,8 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         del values[:-LEARNED_KEEP]
         _LOGGER.debug("Learned stop offset %s %+.1f min", direction, offset)
         if self._on_offsets_learned:
-            self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
+            self._on_offsets_learned(self.stop_offsets, self._arrived,
+                                             self.travel_minutes, self.route_stops)
 
     def _smooth(self, pupil_id: str, run_id: str, eta: dt.datetime,
                 now: dt.datetime) -> dt.datetime:
@@ -458,6 +547,16 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             eta = earliest(eta, from_departure)
             source = SOURCE_LIVE
 
+        # Better still, once the line is known: the last stop the bus actually
+        # pulled away from is a closer and more recent anchor than the start.
+        left = self._left_stop.get(pupil_id)
+        known = self.route_stops.get(direction) or {}
+        if left and left[0] == run_id and known.get("places"):
+            remaining = median(known["places"][left[1]].get("to_stop"))
+            if remaining:
+                eta = earliest(eta, left[2] + dt.timedelta(minutes=remaining))
+                source = SOURCE_LIVE
+
         if eta is not None and source == SOURCE_LIVE:
             self._last_live[pupil_id] = (run_id, now, eta)
         elif live:
@@ -500,5 +599,9 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "appeared": (self._run_start.get(pupil_id) or (None, None, None))[2],
                 "departed": (self._departed.get(pupil_id) or (None, None))[1],
                 "typical_run": typical_run,
+                "route_runs": (self.route_stops.get(direction) or {}).get("runs"),
+                "route_stops_known": sum(
+                    1 for p in (known.get("places") or [])
+                    if is_served_stop(p.get("seen"), known.get("runs"))),
                 "direction": direction, "run_id": run_id, "done": False,
                 "samples": len(self.stop_offsets.get(direction or "", []))}
