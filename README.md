@@ -25,7 +25,7 @@ One device per child, discovered automatically from your parent account:
 | `sensor.…_bus_status` | `scheduled` / `on_route` / `on_board` / `completed` / `missed` / `no_service`, with bus number and stop names as attributes |
 | `sensor.…_scheduled_departure` | timestamp of the pickup |
 | `sensor.…_scheduled_arrival` | timestamp of the arrival |
-| `sensor.…_bus_at_our_stop` | **when the bus reaches your own stop** - live while it is moving, otherwise the timetable plus what has been learned; `source` says which |
+| `sensor.…_bus_at_our_stop` | **when the bus reaches your own stop** - live while it is moving, the plain timetable before that; `source` says which, and `typical` carries what history says this stop is usually served at |
 | `sensor.…_minutes_to_our_stop` | the same as a countdown, derived when read - so it keeps ticking between commute windows, for a display or a voice answer asked at any hour |
 | `binary_sensor.…_arriving_soon` | **the automation trigger** - latches for the run so a lift is not called three times |
 | `event.…_bus_event` | `approaching` / `checked_in` / `checked_out` / `missed`, each fired once per run |
@@ -92,7 +92,7 @@ times. `arriving_soon` turns on once per run and stays on.
 
 **It says how much to trust it.** The `source` attribute is `live` when the
 figure comes from the bus's own position (or a travel-time sensor you
-configured) and `timetable+learned` otherwise. An automation can insist on a
+configured) and `timetable` otherwise. An automation can insist on a
 live figure before doing something it cannot take back.
 
 Where the forecast comes from, in descending order of trust: a travel-time

@@ -223,5 +223,34 @@ class TestCountdownIsDerivedWhenRead(unittest.TestCase):
         self.assertNotIn('"minutes":', (_PKG / "coordinator.py").read_text())
 
 
+class TestTimetableIsNotDressedUp(unittest.TestCase):
+    """Before the bus has moved, publish the timetable and nothing else.
+
+    The learned offset halves the error of a pre-run estimate (3.0 min down
+    to 1.2 over seven runs), but folding it into the headline states a delay
+    that has not been observed: the bus is not even at the start of its line
+    yet. It rides along as `typical` instead, so a dashboard can show both and
+    the forecast proper only speaks once the bus does.
+    """
+
+    def setUp(self):
+        self.src = (_PKG / "coordinator.py").read_text()
+        self.forecast = self.src[self.src.index("def _forecast"):]
+
+    def test_the_fallback_publishes_the_plain_timetable(self):
+        self.assertIn("eta, source = due, SOURCE_TIMETABLE", self.forecast)
+
+    def test_the_learned_offset_is_not_added_to_the_headline(self):
+        self.assertNotIn("eta = due + dt.timedelta(minutes=offset)", self.forecast)
+
+    def test_history_is_still_measured_and_reported(self):
+        self.assertIn('"typical": typical', self.forecast)
+        self.assertIn("stop_offsets", self.src,
+                      "the offset must still be learned, only not asserted")
+
+    def test_no_source_claims_the_timetable_was_improved(self):
+        self.assertNotIn("SOURCE_LEARNED", self.src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

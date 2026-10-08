@@ -20,7 +20,6 @@ from .const import (
 )
 from .util import (
     LEARNED_KEEP,
-    SOURCE_LEARNED,
     SOURCE_LIVE,
     SOURCE_TIMETABLE,
     STATE_ON_BOARD,
@@ -418,17 +417,24 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     (now - previous[1]) <= dt.timedelta(minutes=5):
                 eta, source = previous[2], SOURCE_LIVE
 
-        if eta is None:
-            due = (route_arrival(route) if direction == "WAY_BACK"
-                   else route_departure(route))
-            if due is not None:
-                offset = median(self.stop_offsets.get(direction)) or 0.0
-                eta = due + dt.timedelta(minutes=offset)
-                source = SOURCE_LEARNED if offset else SOURCE_TIMETABLE
+        # What history says this stop is usually served at. Reported alongside
+        # the headline rather than as it: before the bus has moved, nothing is
+        # known about *today*, and a figure that silently carries an average
+        # delay reads like a delay that has already been observed.
+        due = (route_arrival(route) if direction == "WAY_BACK"
+               else route_departure(route))
+        offset = median(self.stop_offsets.get(direction))
+        typical = due + dt.timedelta(minutes=offset) if due and offset else None
+
+        if eta is None and due is not None:
+            # The timetable, plain. The bus has not shown itself yet, so the
+            # published promise is the one the school made.
+            eta, source = due, SOURCE_TIMETABLE
 
         # No minutes figure here on purpose: outside the commute windows this
         # payload is kept rather than refreshed, so a countdown stored in it
         # would freeze with it. The entities derive it from `eta` when read.
-        return {"eta": eta, "source": source,
+        return {"eta": eta, "source": source, "typical": typical,
+                "offset": offset,
                 "direction": direction, "run_id": run_id, "done": False,
                 "samples": len(self.stop_offsets.get(direction or "", []))}

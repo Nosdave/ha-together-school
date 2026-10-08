@@ -230,6 +230,13 @@ class StopEtaSensor(TogetherSchoolEntity, SensorEntity):
         return {k: v for k, v in {
             "source": f.get("source"),
             "direction": f.get("direction"),
+            # What history says this stop is usually served at, and by how
+            # much it differs from the timetable. Kept beside the headline
+            # rather than folded into it: until the bus has moved, nothing is
+            # known about today, and an average delay baked into the forecast
+            # reads like one that has already happened.
+            "typical": f.get("typical"),
+            "typical_offset_minutes": f.get("offset"),
             "learned_samples": f.get("samples"),
         }.items() if v is not None}
 

@@ -470,8 +470,11 @@ RECEDE_MARGIN_M = 300
 MIN_MOVING_STEPS = 2
 MIN_MOVING_M = 150
 
+# Only two: either the bus has shown where it is, or we are repeating the
+# timetable. What history says this stop is usually served at rides along
+# as a separate attribute - folding it into the headline made an average
+# delay look like one already observed today.
 SOURCE_LIVE = "live"
-SOURCE_LEARNED = "timetable+learned"
 SOURCE_TIMETABLE = "timetable"
 
 
