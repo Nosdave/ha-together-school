@@ -211,5 +211,30 @@ class TestMinutesUntil(unittest.TestCase):
         self.assertIsNone(_u.minutes_until(T0, None))
 
 
+class TestEarliest(unittest.TestCase):
+    """Two estimates disagree; take the one that gets you there in time.
+
+    The loss is not symmetric. A forecast three minutes early costs three
+    minutes of waiting; one minute late costs the bus. Over six mornings the
+    speed estimate alone was up to 92 seconds optimistic, the pair taken at
+    their earlier value at most 18.
+    """
+
+    def test_takes_the_earlier_of_two(self):
+        a = T0 + dt.timedelta(minutes=5)
+        b = T0 + dt.timedelta(minutes=3)
+        self.assertEqual(_u.earliest(a, b), b)
+        self.assertEqual(_u.earliest(b, a), b)
+
+    def test_ignores_the_missing_one(self):
+        a = T0 + dt.timedelta(minutes=5)
+        self.assertEqual(_u.earliest(a, None), a)
+        self.assertEqual(_u.earliest(None, a), a)
+
+    def test_nothing_known_is_nothing_promised(self):
+        self.assertIsNone(_u.earliest(None, None))
+        self.assertIsNone(_u.earliest())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

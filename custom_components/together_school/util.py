@@ -470,6 +470,23 @@ RECEDE_MARGIN_M = 300
 MIN_MOVING_STEPS = 2
 MIN_MOVING_M = 150
 
+# How far from its starting spot the bus must be before it counts as having
+# set off. Comfortably clear of the scatter seen while it waits there.
+MOVED_AWAY_M = 50
+
+
+def earliest(*candidates: Any) -> Any:
+    """The earliest of the forecasts on offer, ignoring the missing ones.
+
+    Deliberately pessimistic, because the cost of being wrong is not
+    symmetric: a forecast that is early means standing at the stop a minute
+    longer, one that is late means watching the bus leave. Over six mornings
+    the earlier of the two estimates was at worst 18 seconds late, against 92
+    for the speed estimate alone.
+    """
+    known = [c for c in candidates if c is not None]
+    return min(known) if known else None
+
 # Only two: either the bus has shown where it is, or we are repeating the
 # timetable. What history says this stop is usually served at rides along
 # as a separate attribute - folding it into the headline made an average

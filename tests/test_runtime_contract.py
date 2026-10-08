@@ -157,7 +157,7 @@ class TestForecastEndsAtArrival(unittest.TestCase):
 
     def test_arrival_is_observed_from_position(self):
         observe = self.src[self.src.index("def _observe_stop_arrival"):]
-        observe = observe[: observe.index("def _travel_minutes")]
+        observe = observe[: observe.index("def _travel_sensor_minutes")]
         self.assertIn("distance_m", observe)
         self.assertNotIn("checkInTime", observe,
                          "the learned offset must not come from the check-in")

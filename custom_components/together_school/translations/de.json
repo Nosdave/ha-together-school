@@ -108,6 +108,9 @@
       },
       "minutes_to_stop": {
         "name": "Minuten bis zur Haltestelle"
+      },
+      "delay": {
+        "name": "Verspätung"
       }
     },
     "event": {

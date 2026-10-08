@@ -20,6 +20,7 @@ from .const import (
 )
 from .util import (
     LEARNED_KEEP,
+    MOVED_AWAY_M,
     SOURCE_LIVE,
     SOURCE_TIMETABLE,
     STATE_ON_BOARD,
@@ -28,6 +29,7 @@ from .util import (
     bus_fix,
     bus_routes,
     distance_m,
+    earliest,
     eta_from_position,
     extract_latlon,
     extract_pupils,
@@ -75,6 +77,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         lead_minutes: int = 5,
         travel_sensor: str | None = None,
         stop_offsets: dict[str, list[float]] | None = None,
+        travel_minutes: dict[str, list[float]] | None = None,
         arrived_runs: dict[str, str] | None = None,
         on_offsets_learned: Any = None,
     ) -> None:
@@ -116,6 +119,15 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._closest: dict[str, tuple[str, float]] = {}
         # Learned timetable->reality offsets in minutes, per direction.
         self.stop_offsets: dict[str, list[float]] = dict(stop_offsets or {})
+        # Learned minutes from the bus pulling away at the start of its line
+        # to reaching this stop, per direction. The better of the two: the
+        # timetable is a promise, this is a measurement anchored on something
+        # that actually happened.
+        self.travel_minutes: dict[str, list[float]] = dict(travel_minutes or {})
+        # Per run: where the bus first appeared, and when it left that spot.
+        # In memory only - meaningless once the run is over.
+        self._run_start: dict[str, tuple[str, tuple[float, float], Any]] = {}
+        self._departed: dict[str, tuple[str, Any]] = {}
         self._on_offsets_learned = on_offsets_learned
         self.travel_sensor = travel_sensor
         self.lead_minutes = lead_minutes
@@ -282,6 +294,22 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not run_id or self._arrived.get(pupil_id) == run_id:
             return
 
+        # Where this run started, and the moment the bus left that spot.
+        # The start of the line is the same place every day (11 m of scatter
+        # over seven mornings), and how long the bus waits there is not: 3.9
+        # to 9.3 minutes. So the wait says nothing, and pulling away says
+        # almost everything - from there the run takes a consistent time.
+        begun = self._run_start.get(pupil_id)
+        if begun is None or begun[0] != run_id:
+            self._run_start[pupil_id] = (run_id, position, fix_time)
+            self._departed.pop(pupil_id, None)
+        else:
+            gone = self._departed.get(pupil_id)
+            if (gone is None or gone[0] != run_id) and \
+                    (distance_m(position, begun[1]) or 0.0) > MOVED_AWAY_M:
+                self._departed[pupil_id] = (run_id, fix_time)
+                _LOGGER.debug("Bus left the start of its line at %s", fix_time)
+
         here = distance_m(position, self.station)
         seen = self._closest.get(pupil_id)
         if seen is None or seen[0] != run_id:
@@ -303,7 +331,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self._on_offsets_learned:
                     # End the forecast, but learn nothing: the moment it
                     # actually arrived is inside the gap and unknown.
-                    self._on_offsets_learned(self.stop_offsets, self._arrived)
+                    self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
             return
 
         # The timetable moment this stop was due: the departure on the way out,
@@ -313,8 +341,18 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._arrived[pupil_id] = run_id
         if due is None:
             if self._on_offsets_learned:
-                self._on_offsets_learned(self.stop_offsets, self._arrived)
+                self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
             return
+        gone = self._departed.get(pupil_id)
+        if gone and gone[0] == run_id:
+            minutes = (now - gone[1]).total_seconds() / 60.0
+            if 0 < minutes <= 60:
+                series = self.travel_minutes.setdefault(
+                    route.get("direction") or "?", [])
+                series.append(round(minutes, 1))
+                del series[:-LEARNED_KEEP]
+                _LOGGER.debug("Learned travel from the line start: %.1f min", minutes)
+
         offset = (now - due).total_seconds() / 60.0
         if abs(offset) > 45:
             # Implausible: a stale fix or a mismatched run, not a real delay.
@@ -325,7 +363,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         del values[:-LEARNED_KEEP]
         _LOGGER.debug("Learned stop offset %s %+.1f min", direction, offset)
         if self._on_offsets_learned:
-            self._on_offsets_learned(self.stop_offsets, self._arrived)
+            self._on_offsets_learned(self.stop_offsets, self._arrived, self.travel_minutes)
 
     def _smooth(self, pupil_id: str, run_id: str, eta: dt.datetime,
                 now: dt.datetime) -> dt.datetime:
@@ -347,7 +385,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         stamps = [h[2].timestamp() for h in history]
         return dt.datetime.fromtimestamp(median(stamps), tz=eta.tzinfo)
 
-    def _travel_minutes(self) -> float | None:
+    def _travel_sensor_minutes(self) -> float | None:
         """Minutes to the stop from the user's own travel-time sensor, if any."""
         if not self.travel_sensor:
             return None
@@ -370,8 +408,8 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         a live figure before doing something irreversible.
         """
         route = select_route(bus_routes(entry.get("agenda")))
-        blank = {"eta": None, "source": None, "direction": None,
-                 "run_id": None, "done": True}
+        blank = {"eta": None, "source": None, "delay": None,
+                 "direction": None, "run_id": None, "done": True}
         if not route:
             return blank
 
@@ -396,7 +434,7 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         source = None
         live = state in (STATE_ON_ROUTE, STATE_ON_BOARD)
 
-        if live and (minutes := self._travel_minutes()) is not None:
+        if live and (minutes := self._travel_sensor_minutes()) is not None:
             eta = now + dt.timedelta(minutes=minutes)
             source = SOURCE_LIVE
         elif live:
@@ -406,6 +444,21 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if eta is not None and source == SOURCE_LIVE:
             eta = self._smooth(pupil_id, run_id, eta, now)
+
+        # Second opinion, anchored on an event rather than on a speed: the bus
+        # left the start of its line at a known moment, and the run from there
+        # takes a consistent time. It is available within fifteen seconds of
+        # the speed estimate, so it buys no warning - what it buys is safety.
+        # Measured over six mornings the speed estimate was up to 92 seconds
+        # optimistic; taking whichever of the two is earlier caps that at 18.
+        gone = self._departed.get(pupil_id)
+        typical_run = median(self.travel_minutes.get(direction))
+        if gone and gone[0] == run_id and typical_run:
+            from_departure = gone[1] + dt.timedelta(minutes=typical_run)
+            eta = earliest(eta, from_departure)
+            source = SOURCE_LIVE
+
+        if eta is not None and source == SOURCE_LIVE:
             self._last_live[pupil_id] = (run_id, now, eta)
         elif live:
             # The bus is on the move but momentarily gives no usable speed - at
@@ -434,7 +487,18 @@ class TogetherSchoolCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # No minutes figure here on purpose: outside the commute windows this
         # payload is kept rather than refreshed, so a countdown stored in it
         # would freeze with it. The entities derive it from `eta` when read.
+        # The question this whole layer exists to answer: on time, or how
+        # much later? Only once the bus has shown itself - before that the
+        # forecast IS the timetable, and "0 minutes late" would be a claim
+        # about a bus nobody has seen.
+        delay = None
+        if due is not None and eta is not None and source == SOURCE_LIVE:
+            delay = round((eta - due).total_seconds() / 60.0, 1)
+
         return {"eta": eta, "source": source, "typical": typical,
-                "offset": offset,
+                "offset": offset, "delay": delay,
+                "appeared": (self._run_start.get(pupil_id) or (None, None, None))[2],
+                "departed": (self._departed.get(pupil_id) or (None, None))[1],
+                "typical_run": typical_run,
                 "direction": direction, "run_id": run_id, "done": False,
                 "samples": len(self.stop_offsets.get(direction or "", []))}

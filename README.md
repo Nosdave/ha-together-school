@@ -26,6 +26,7 @@ One device per child, discovered automatically from your parent account:
 | `sensor.…_scheduled_departure` | timestamp of the pickup |
 | `sensor.…_scheduled_arrival` | timestamp of the arrival |
 | `sensor.…_bus_at_our_stop` | **when the bus reaches your own stop** - live while it is moving, the plain timetable before that; `source` says which, and `typical` carries what history says this stop is usually served at |
+| `sensor.…_delay` | **on time, or how many minutes later** - empty until the bus has shown itself, because before that the forecast is the timetable |
 | `sensor.…_minutes_to_our_stop` | the same as a countdown, derived when read - so it keeps ticking between commute windows, for a display or a voice answer asked at any hour |
 | `binary_sensor.…_arriving_soon` | **the automation trigger** - latches for the run so a lift is not called three times |
 | `event.…_bus_event` | `approaching` / `checked_in` / `checked_out` / `missed`, each fired once per run |
@@ -95,11 +96,23 @@ figure comes from the bus's own position (or a travel-time sensor you
 configured) and `timetable` otherwise. An automation can insist on a
 live figure before doing something it cannot take back.
 
-Where the forecast comes from, in descending order of trust: a travel-time
-sensor you point at in the options, the bus's own movement, or the timetable
-plus the offset the integration measures for itself. That offset is learned
-from **positions**, never from the check-in - the check-in is scanned by a
-supervisor and trails the bus by minutes, which would push every forecast late.
+Two independent estimates run once the bus is moving, and the **earlier** of
+the two is published. That is deliberate: a forecast a minute early costs a
+minute of waiting, one a minute late costs you the bus.
+
+- **From its speed.** Distance to the stop over the speed it has actually been
+  driving at - the standstill before it set off does not count, and a single
+  fifteen-second hop is too thin to publish.
+- **From when it set off.** A route starts at the same place every day, waits
+  there for an unpredictable while, and then takes a consistent time to reach
+  your stop. Once the bus leaves that spot, that learned time is the better
+  anchor, because it rests on something that happened rather than on a promise.
+
+Before the bus has moved, the plain timetable is published and nothing is
+dressed up; what history says the stop is usually served at rides along in the
+`typical` attribute. Everything learned is measured from **positions**, never
+from the check-in - that is scanned by a supervisor and trails the bus by
+minutes, which would push every forecast late.
 
 A blueprint is included: **Settings → Automations → Blueprints → Import**, then
 point it at

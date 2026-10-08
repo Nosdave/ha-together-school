@@ -108,6 +108,9 @@
       },
       "minutes_to_stop": {
         "name": "Minutes to our stop"
+      },
+      "delay": {
+        "name": "Delay"
       }
     },
     "event": {

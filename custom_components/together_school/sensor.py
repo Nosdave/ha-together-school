@@ -63,6 +63,7 @@ async def async_setup_entry(
         entities.append(CheckOutSensor(coordinator, pid))
         entities.append(StopEtaSensor(coordinator, pid))
         entities.append(MinutesToStopSensor(coordinator, pid))
+        entities.append(DelaySensor(coordinator, pid))
     async_add_entities(entities)
 
 
@@ -238,7 +239,36 @@ class StopEtaSensor(TogetherSchoolEntity, SensorEntity):
             "typical": f.get("typical"),
             "typical_offset_minutes": f.get("offset"),
             "learned_samples": f.get("samples"),
+            # The two events the forecast hangs off, so an automation can
+            # stage itself: appearing leaves at least six minutes, pulling
+            # away at least two.
+            "bus_appeared": f.get("appeared"),
+            "bus_departed": f.get("departed"),
+            "typical_run_minutes": f.get("typical_run"),
         }.items() if v is not None}
+
+
+class DelaySensor(TogetherSchoolEntity, SensorEntity):
+    """How much later than the timetable the bus will actually be here.
+
+    The question the whole forecast exists to answer. Deliberately empty
+    until the bus has shown itself: before that the forecast IS the
+    timetable, and reporting "0 minutes late" would be a claim about a bus
+    nobody has seen yet. It fills in the moment the bus pulls away from the
+    start of its line, which is roughly two minutes before it arrives.
+    """
+
+    _attr_translation_key = "delay"
+    _attr_icon = "mdi:clock-alert-outline"
+    _attr_native_unit_of_measurement = "min"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._pupil_id}_delay"
+
+    @property
+    def native_value(self) -> float | None:
+        return (self._pupil.get("forecast") or {}).get("delay")
 
 
 class MinutesToStopSensor(TogetherSchoolEntity, SensorEntity):
