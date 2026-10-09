@@ -144,7 +144,7 @@ inactive - runs are scheduled regardless.
  "busLocation": [{"busId": "<uuid>",
                   "location": {"type": "Feature",
                                "geometry": {"type": "Point",
-                                            "coordinates": [1.17, 2.03]},
+                                            "coordinates": [<lat>, <lng>]},
                                "properties": {"name": "Unknown place"}},
                   "lastLocatedTime": "2026-09-21T05:35:44+0000",
                   "actual": true}],

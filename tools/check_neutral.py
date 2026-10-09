@@ -5,6 +5,12 @@ This integration must work for any school on the platform, and a hardcoded
 school code or tenant does double damage: it breaks every other deployment,
 and it identifies whoever committed it. Examples must stay placeholders.
 
+Coordinates are checked too, and that was learned the hard way: this script
+passed for three weeks while real ones sat in the test fixtures - the stop
+where a four-year-old is collected every morning at a fixed time, in a public
+repository carrying its author's name. A guard that checks only what you
+thought of is worse than none, because it is believed.
+
     python3 tools/check_neutral.py
 """
 
@@ -28,6 +34,10 @@ HOST = re.compile(r"\b([a-z0-9][a-z0-9-]*)\.together-school\.com", re.I)
 # A tenant value such as "tenant7" or "tenant_somewhere" (but not the field
 # names tenant_id / TENANT_ID, and not an obvious placeholder).
 TENANT = re.compile(r"\btenant[_-]?([a-z0-9][a-z0-9-]*)\b", re.I)
+# A coordinate precise enough to point at a real place. Four decimals is about
+# eleven metres - a doorstep. Two is a few kilometres and harmless, so test
+# fixtures can still look like positions without being one.
+COORD = re.compile(r"(?<![\w.])(-?\d{1,3}\.\d{4,})(?![\w.])")
 
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
 SKIP_SUFFIX = {".png", ".jpg", ".ico", ".bundle", ".gz", ".zip"}
@@ -47,6 +57,15 @@ def offending(text: str) -> list[str]:
         if bare == "id":
             continue
         hits.append(f"tenant value 'tenant…{label}'")
+    for value in COORD.findall(text):
+        try:
+            number = abs(float(value))
+        except ValueError:
+            continue
+        # Only flag things that could be a latitude or longitude. Versions,
+        # timings and thresholds are not places.
+        if number <= 180.0 and ("." in value):
+            hits.append(f"coordinate-precision value '{value}'")
     return hits
 
 

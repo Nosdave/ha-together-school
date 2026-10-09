@@ -143,10 +143,10 @@ class TestRobustness(unittest.TestCase):
 
     def test_latlon_accepts_strings_and_list_wrapping(self):
         self.assertEqual(
-            extract_latlon({"location": {"latitude": "50.8", "longitude": "4.3"}}),
-            (50.8, 4.3),
+            extract_latlon({"location": {"latitude": "50.5", "longitude": "9.3"}}),
+            (50.5, 9.3),
         )
-        self.assertEqual(extract_latlon([{"lat": 50.8, "lng": 4.3}]), (50.8, 4.3))
+        self.assertEqual(extract_latlon([{"lat": 50.5, "lng": 9.3}]), (50.5, 9.3))
 
     def test_timestamps_are_always_aware(self):
         """HA rejects naive datetimes on TIMESTAMP sensors."""
@@ -171,7 +171,7 @@ DELIVERY_LIVE = {
             "busId": "00000000-0000-0000-0000-000000000000",
             "location": {
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [1.17, 2.03]},
+                "geometry": {"type": "Point", "coordinates": [1.5, 2.5]},
                 "properties": {"name": "Unknown place"},
             },
             "lastLocatedTime": "2026-09-21T05:35:44+0000",
@@ -181,14 +181,14 @@ DELIVERY_LIVE = {
     "schoolLocation": [
         {
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [1.16, 2.12]},
+            "geometry": {"type": "Point", "coordinates": [1.6, 2.6]},
             "properties": {"name": "1180 BRUXELLES"},
         }
     ],
     "stationLocation": [
         {
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [1.12, 2.07]},
+            "geometry": {"type": "Point", "coordinates": [1.4, 2.4]},
             "properties": {"name": "1180 BRUXELLES"},
         }
     ],
@@ -205,15 +205,15 @@ class TestLiveDeliveryShape(unittest.TestCase):
 
     def test_bus_position_is_read_as_lat_lng(self):
         lat, lon = extract_latlon(DELIVERY_LIVE["busLocation"])
-        self.assertAlmostEqual(lat, 1.17)
-        self.assertAlmostEqual(lon, 2.03)
+        self.assertAlmostEqual(lat, 1.5)
+        self.assertAlmostEqual(lon, 2.5)
 
     def test_school_and_station_too(self):
         self.assertAlmostEqual(
-            extract_latlon(DELIVERY_LIVE["schoolLocation"])[0], 1.16
+            extract_latlon(DELIVERY_LIVE["schoolLocation"])[0], 1.6
         )
         self.assertAlmostEqual(
-            extract_latlon(DELIVERY_LIVE["stationLocation"])[1], 2.07
+            extract_latlon(DELIVERY_LIVE["stationLocation"])[1], 2.4
         )
 
     def test_spec_order_still_works_when_unambiguous(self):
@@ -309,10 +309,10 @@ class TestBoardedRun(unittest.TestCase):
             "location": {
                 "type": "Embarked",
                 "geometry": {"type": "Point",
-                             "coordinates": [1.15, 2.11]},
+                             "coordinates": [1.7, 2.7]},
             }
         }]
-        self.assertEqual(extract_latlon(embarked), (1.15, 2.11))
+        self.assertEqual(extract_latlon(embarked), (1.7, 2.7))
 
 
 class TestTwoRunDay(unittest.TestCase):
@@ -487,16 +487,16 @@ class TestLocations(unittest.TestCase):
         self.assertIsNone(extract_latlon(DELIVERY_IDLE["busLocation"]))
 
     def test_lat_lng(self):
-        self.assertEqual(extract_latlon({"lat": 50.8, "lng": 4.3}), (50.8, 4.3))
+        self.assertEqual(extract_latlon({"lat": 50.5, "lng": 9.3}), (50.5, 9.3))
 
     def test_latitude_longitude(self):
         self.assertEqual(
-            extract_latlon({"latitude": 50.8, "longitude": 4.3}), (50.8, 4.3)
+            extract_latlon({"latitude": 50.5, "longitude": 9.3}), (50.5, 9.3)
         )
 
     def test_nested_location(self):
-        node = {"busId": "b1", "location": {"lat": 1.22, "lng": 4.34}}
-        self.assertEqual(extract_latlon(node), (1.22, 4.34))
+        node = {"busId": "b1", "location": {"lat": 1.01, "lng": 9.34}}
+        self.assertEqual(extract_latlon(node), (1.01, 9.34))
 
     def test_ambiguous_coordinates_use_the_backend_order(self):
         """Despite the "Feature" wrapper the backend emits [lat, lng].
@@ -504,8 +504,8 @@ class TestLocations(unittest.TestCase):
         When both values could be a latitude the order is undecidable, so the
         observed convention wins - verified against a known school address.
         """
-        node = {"geometry": {"coordinates": [1.22, 4.34]}}
-        self.assertEqual(extract_latlon(node), (1.22, 4.34))
+        node = {"geometry": {"coordinates": [1.01, 9.34]}}
+        self.assertEqual(extract_latlon(node), (1.01, 9.34))
 
 
 class TestBusRoute(unittest.TestCase):

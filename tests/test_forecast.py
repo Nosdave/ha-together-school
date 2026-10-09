@@ -23,19 +23,34 @@ _spec = importlib.util.spec_from_file_location("ts_util", _UTIL)
 _u = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_u)
 
-STOP = (1.12, 2.07)
 T0 = dt.datetime(2026, 9, 25, 5, 33, tzinfo=dt.timezone.utc)
+
+# Positions here are metre offsets from a fictional origin, never coordinate
+# literals. A test fixture that records a real place is a leak: this file
+# carried the stop where a four-year-old is collected every morning, in a
+# public repository, for three weeks. Written this way the leak cannot recur,
+# and the fixtures read better - "945 m north" says what it means.
+ORIGIN = (1.0, 1.0)
+_DEG = 111320.0
+
+
+def place(north_m, east_m=0.0):
+    """A position this many metres north and east of the fictional origin."""
+    return (ORIGIN[0] + north_m / _DEG, ORIGIN[1] + east_m / _DEG)
+
+
+STOP = place(0, 0)
 
 
 def _fixes(*points):
-    """(seconds_offset, lat, lon) -> the shape the helpers expect."""
-    return [(T0 + dt.timedelta(seconds=s), la, lo) for s, la, lo in points]
+    """(seconds_offset, north_m, east_m) -> the shape the helpers expect."""
+    return [(T0 + dt.timedelta(seconds=s), *place(n, e)) for s, n, e in points]
 
 
 class TestDistance(unittest.TestCase):
     def test_known_separation(self):
         # The start point observed every morning, ~945 m from the stop.
-        d = _u.distance_m((1.18, 2.03), STOP)
+        d = _u.distance_m(place(945, 0), STOP)
         self.assertAlmostEqual(d, 945, delta=25)
 
     def test_missing_input(self):
@@ -60,8 +75,7 @@ class TestMedian(unittest.TestCase):
 class TestSpeed(unittest.TestCase):
     def test_typical_city_speed(self):
         # ~250 m per 30 s = 30 km/h, held over two steps.
-        fixes = _fixes((0, 1.08, 2.05), (30, 1.09, 2.05),
-                       (60, 1.10, 2.05))
+        fixes = _fixes((0, 0, 0), (30, 250, 0), (60, 500, 0))
         self.assertAlmostEqual(_u.speed_kmh(fixes), 30, delta=3)
 
     def test_one_hop_is_too_thin_to_believe(self):
@@ -70,20 +84,20 @@ class TestSpeed(unittest.TestCase):
         Taken alone it put the first live forecast of the morning out by ten
         minutes; the bus has usually just pulled away and is still crawling.
         """
-        fixes = _fixes((0, 1.08, 2.05), (30, 1.09, 2.05))
+        fixes = _fixes((0, 0, 0), (30, 250, 0))
         self.assertIsNone(_u.speed_kmh(fixes))
 
     def test_standing_bus_returns_none(self):
         """A stationary bus must not yield a speed to divide by."""
-        fixes = _fixes((0, 1.12, 2.08), (30, 1.13, 2.09))
+        fixes = _fixes((0, 0, 0), (30, 0.1, 0.1))
         self.assertIsNone(_u.speed_kmh(fixes))
 
     def test_absurd_jump_rejected(self):
-        fixes = _fixes((0, 1.08, 2.05), (5, 1.23, 2.05))
+        fixes = _fixes((0, 0, 0), (5, 12000, 0))
         self.assertIsNone(_u.speed_kmh(fixes))
 
     def test_too_few_fixes(self):
-        self.assertIsNone(_u.speed_kmh(_fixes((0, 1.07, 4.35))))
+        self.assertIsNone(_u.speed_kmh(_fixes((0, 0, 0))))
         self.assertIsNone(_u.speed_kmh([]))
 
 
@@ -93,24 +107,23 @@ class TestEtaFromPosition(unittest.TestCase):
     def test_moving_towards_the_stop(self):
         # ~650 m still to go at 30 km/h -> a couple of minutes once the road
         # factor is applied.
-        fixes = _fixes((0, 1.04, 2.08), (30, 1.05, 2.08),
-                       (60, 1.06, 2.08))
+        fixes = _fixes((0, -1149, 0), (30, -899, 0), (60, -649, 0))
         eta = _u.eta_from_position(fixes, STOP, self.NOW)
         self.assertIsNotNone(eta)
         minutes = (eta - self.NOW).total_seconds() / 60
         self.assertTrue(1 < minutes < 8, minutes)
 
     def test_already_at_the_stop(self):
-        fixes = _fixes((0, 1.14, 2.10), (30, 1.12, 2.08))
+        fixes = _fixes((0, 1, 1), (30, 0, 0))
         self.assertEqual(_u.eta_from_position(fixes, STOP, self.NOW), self.NOW)
 
     def test_standing_far_away_promises_nothing(self):
         """Better no forecast than one invented from a stationary bus."""
-        fixes = _fixes((0, 1.02, 2.01), (30, 1.03, 2.02))
+        fixes = _fixes((0, -1642, -3726), (30, -1641.9, -3725.9))
         self.assertIsNone(_u.eta_from_position(fixes, STOP, self.NOW))
 
     def test_no_stop_known(self):
-        fixes = _fixes((0, 1.08, 2.08), (30, 1.09, 2.08))
+        fixes = _fixes((0, -529, 0), (30, -279, 0))
         self.assertIsNone(_u.eta_from_position(fixes, None, self.NOW))
 
 
@@ -125,8 +138,8 @@ class TestLeadingStandstill(unittest.TestCase):
 
     def _pulling_away(self):
         # Parked at the line start, then two 98 m hops as it pulls away.
-        points = [(s, 1.18, 2.03) for s in range(0, 91, 15)]
-        points += [(105, 1.20, 2.03), (120, 1.21, 2.03)]
+        points = [(s, 945, 0) for s in range(0, 91, 15)]
+        points += [(105, 847, 0), (120, 749, 0)]
         return _fixes(*points)
 
     def test_standstill_is_not_averaged_into_the_speed(self):
@@ -146,12 +159,12 @@ class TestLeadingStandstill(unittest.TestCase):
 
     def test_the_very_first_hop_still_promises_nothing(self):
         """Wait for a second hop rather than publish a wild first guess."""
-        points = [(s, 1.18, 2.03) for s in range(0, 106, 15)]
-        points.append((120, 1.20, 2.03))
+        points = [(s, 945, 0) for s in range(0, 106, 15)]
+        points.append((120, 847, 0))
         self.assertIsNone(_u.speed_kmh(_fixes(*points)))
 
     def test_a_bus_that_only_stands_still_still_promises_nothing(self):
-        fixes = _fixes(*[(s, 1.18, 2.03) for s in range(0, 120, 15)])
+        fixes = _fixes(*[(s, 945, 0) for s in range(0, 120, 15)])
         self.assertIsNone(_u.speed_kmh(fixes))
 
 
@@ -266,19 +279,22 @@ class TestTellingStopsFromTrafficLights(unittest.TestCase):
 
 
 class TestFindPlace(unittest.TestCase):
-    PLACES = [{"lat": 1.18, "lon": 2.03}, {"lat": 1.12, "lon": 2.08}]
+    # The start of a line, and a stop a kilometre south of it.
+    PLACES = [dict(zip(("lat", "lon"), place(945, 0))),
+              dict(zip(("lat", "lon"), place(0, 0)))]
 
     def test_recognises_the_same_spot_again(self):
-        self.assertEqual(_u.find_place(self.PLACES, (1.19, 2.04)), 0)
+        """Two metres of GPS wobble is the same place, not a new one."""
+        self.assertEqual(_u.find_place(self.PLACES, place(947, 2)), 0)
 
     def test_a_different_spot_is_new(self):
-        self.assertIsNone(_u.find_place(self.PLACES, (1.02, 2.01)))
+        self.assertIsNone(_u.find_place(self.PLACES, place(-1642, -3726)))
 
     def test_picks_the_nearest_when_two_are_close(self):
-        self.assertEqual(_u.find_place(self.PLACES, (1.11, 2.06)), 1)
+        self.assertEqual(_u.find_place(self.PLACES, place(-5, -2)), 1)
 
     def test_nothing_known_yet(self):
-        self.assertIsNone(_u.find_place([], (1.07, 4.35)))
+        self.assertIsNone(_u.find_place([], place(0, 0)))
         self.assertIsNone(_u.find_place(self.PLACES, None))
 
 

@@ -124,9 +124,9 @@ def _coords_to_latlon(first: Any, second: Any) -> tuple[float, float] | None:
     """Interpret a GeoJSON-style coordinate pair.
 
     The backend wraps positions in ``"type": "Feature"`` objects but emits
-    ``[lat, lng]``, while GeoJSON specifies ``[lng, lat]``. Verified against a
-    known school address, whose coordinates come back as [50.79…, 4.37…] in
-    Brussels. Reading it the spec way would silently place the bus thousands of
+    ``[lat, lng]``, while GeoJSON specifies ``[lng, lat]``. Verified by reading
+    a known school address back out of a live response and checking where it
+    landed. Reading it the spec way would silently place the bus thousands of
     kilometres away with both values still "valid", so this prefers the
     observed order and only falls back to the spec when the first value cannot
     possibly be a latitude.
